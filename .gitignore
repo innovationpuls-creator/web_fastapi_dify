@@ -1,0 +1,31 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.npm-cache/
+
+# Runtime data
+data/
+**/.tmp_repo/
+**/.tmp_service/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.preview*.log
+tmp*/
+output/
+.playwright-cli/

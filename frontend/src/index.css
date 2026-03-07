@@ -1,0 +1,482 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background-color: #050608;
+  color: #ffffff;
+  --sidebar-width: 220px;
+  --motion-duration-fast: 180ms;
+  --motion-duration-medium: 320ms;
+  --motion-duration-slow: 420ms;
+  --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #050608;
+  color: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+textarea {
+  border: 0;
+}
+
+textarea::-webkit-scrollbar {
+  width: 0;
+}
+
+textarea::placeholder {
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.desktop-sidebar,
+.desktop-main,
+.desktop-composer {
+  transition:
+    width var(--motion-duration-medium) var(--motion-ease-standard),
+    padding-left var(--motion-duration-medium) var(--motion-ease-standard),
+    bottom var(--motion-duration-medium) var(--motion-ease-emphasized);
+}
+
+.sidebar-collapse-trigger,
+.floating-sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  color: rgba(244, 244, 245, 0.9);
+  overflow: hidden;
+}
+
+.sidebar-collapse-trigger {
+  position: relative;
+}
+
+.floating-sidebar-toggle {
+  position: fixed;
+  width: auto;
+  min-width: 2rem;
+  padding-inline: 0.625rem;
+}
+
+.sidebar-collapse-trigger::after,
+.floating-sidebar-toggle::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.18), transparent 64%);
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+  pointer-events: none;
+}
+
+.sidebar-collapse-trigger:hover::after,
+.sidebar-collapse-trigger:focus-visible::after,
+.floating-sidebar-toggle:hover::after,
+.floating-sidebar-toggle:focus-visible::after {
+  opacity: 1;
+  transform: scale(1.12);
+}
+
+.composer-shell {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(255, 255, 255, 0.028);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 0 0 1px rgba(255, 255, 255, 0.025);
+  overflow: visible;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.composer-shell::after {
+  content: "";
+  position: absolute;
+  right: 1.4rem;
+  bottom: 0;
+  left: 1.4rem;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.94), transparent);
+  opacity: 0;
+  transform: scaleX(0.82);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+  pointer-events: none;
+}
+
+.composer-shell:hover {
+  background: rgba(255, 255, 255, 0.036);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.composer-shell.is-dragging {
+  border-color: rgba(96, 165, 250, 0.26);
+  background: rgba(14, 20, 32, 0.9);
+}
+
+.composer-shell.is-focused,
+.composer-shell:focus-within {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(116, 168, 255, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(59, 130, 246, 0.18);
+}
+
+.composer-shell.is-focused::after,
+.composer-shell:focus-within::after {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.composer-tool-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  color: rgba(212, 212, 216, 0.92);
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.composer-tool-button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+}
+
+.composer-tool-button:disabled {
+  opacity: 0.36;
+}
+
+.composer-send-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-width: 2.75rem;
+  height: 2.75rem;
+  padding: 0 0.85rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.92), rgba(59, 130, 246, 0.82));
+  color: #f8fbff;
+  box-shadow:
+    0 10px 28px rgba(37, 99, 235, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    filter var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.composer-send-button:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 14px 32px rgba(37, 99, 235, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  filter: saturate(1.04);
+}
+
+.composer-send-button:disabled {
+  opacity: 0.58;
+  box-shadow: none;
+  filter: grayscale(0.12);
+}
+
+.input-ripple {
+  position: absolute;
+  right: 1.4rem;
+  bottom: 0;
+  left: 50%;
+  width: 0;
+  height: 2.5px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.96), transparent);
+  transform: translateX(-50%);
+  animation: ripple 0.6s ease-out forwards;
+  pointer-events: none;
+}
+
+.composer-drop-indicator {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: inherit;
+  background: rgba(5, 8, 14, 0.72);
+  color: rgba(191, 219, 254, 0.92);
+  font-size: 0.75rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.pending-upload {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pending-upload-image,
+.message-image {
+  display: block;
+  object-fit: cover;
+}
+
+.pending-upload-image {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.8rem;
+}
+
+.pending-upload-status {
+  color: rgba(161, 161, 170, 0.9);
+  font-size: 0.73rem;
+  line-height: 1rem;
+}
+
+.pending-upload-remove,
+.history-item-delete {
+  color: rgba(161, 161, 170, 0.9);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transition:
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.pending-upload-remove:hover,
+.history-item-delete:hover {
+  color: #ffffff;
+}
+
+.history-item-delete {
+  opacity: 0;
+}
+
+.history-row:hover .history-item-delete,
+.history-row:focus-within .history-item-delete {
+  opacity: 1;
+}
+
+.message-user-shell {
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 1rem;
+  background: rgba(24, 24, 27, 0.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 10px 28px rgba(0, 0, 0, 0.14);
+  padding: 1rem 1.05rem;
+  line-height: 1.8rem;
+}
+
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.message-image {
+  width: min(100%, 16rem);
+  max-height: 16rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mobile-sheet {
+  height: min(65vh, 34rem);
+}
+
+.composer-error-bar {
+  border: 1px solid rgba(248, 113, 113, 0.16);
+  border-radius: 1rem;
+  background: rgba(28, 18, 18, 0.82);
+  color: rgba(244, 184, 184, 0.92);
+  font-size: 0.875rem;
+  line-height: 1.4rem;
+  padding: 0.7rem 0.9rem;
+}
+
+.composer-error-action {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.composer-error-action:hover {
+  color: #ffffff;
+}
+
+.thinking-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(167, 179, 204, 0.9);
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.thinking-pulse {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
+  background: rgba(96, 165, 250, 0.94);
+  box-shadow: 0 0 10px rgba(96, 165, 250, 0.22);
+  animation: thinkingPulse 1.3s ease-in-out infinite;
+}
+
+.assistant-cursor {
+  display: inline-block;
+  width: 0.5rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: rgba(244, 244, 245, 0.82);
+  animation: cursorBlink 1s ease-in-out infinite;
+}
+
+@media (min-width: 768px) {
+  .desktop-sidebar {
+    width: var(--sidebar-width);
+  }
+
+  .desktop-main,
+  .desktop-composer {
+    padding-left: var(--sidebar-width);
+  }
+}
+
+@media (max-width: 767px) {
+  .history-item-delete {
+    opacity: 1;
+  }
+
+  .message-image {
+    width: min(100%, 13rem);
+  }
+}
+
+@keyframes ripple {
+  0% {
+    width: 0;
+    opacity: 0.75;
+  }
+
+  100% {
+    width: calc(100% - 2.8rem);
+    opacity: 0;
+  }
+}
+
+@keyframes thinkingPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.88);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes cursorBlink {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-sidebar,
+  .desktop-main,
+  .desktop-composer,
+  .composer-shell,
+  .composer-shell::after,
+  .composer-tool-button,
+  .composer-send-button,
+  .pending-upload-remove,
+  .history-item-delete,
+  .composer-error-action,
+  textarea::placeholder,
+  .sidebar-collapse-trigger::after,
+  .floating-sidebar-toggle::after {
+    transition-duration: 1ms !important;
+  }
+
+  .input-ripple,
+  .thinking-pulse,
+  .assistant-cursor {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
