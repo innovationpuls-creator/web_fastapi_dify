@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import unittest
 
 from backend.app.chat.application.conversations import ConversationService
+from backend.app.chat.application.message_state import persist_cancelled_message
 from backend.app.chat.application.streaming import (
     ChatStreamService,
     PreparedChatStream,
@@ -218,6 +219,47 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(second)
         self.assertEqual(first.message.status, "cancelled")
         self.assertEqual(second.message.status, "cancelled")
+
+    async def test_persist_cancelled_message_backfills_thinking_completion_time(self) -> None:
+        _, messages = await self._seed_streaming_assistant()
+        cancelled_message = await self.repository.update_message(
+            message_id=messages.assistant.id,
+            status="cancelled",
+            preview_text="Generation cancelled.",
+            text_content="Partial answer",
+            updated_at="2026-03-07T00:00:03+00:00",
+            model="test-model",
+            finish_reason="cancelled",
+            error=None,
+            thinking_completed_at=None,
+        )
+
+        self.assertIsNotNone(cancelled_message)
+        self.assertIsNone(cancelled_message.thinking_completed_at)
+
+        backfilled = await persist_cancelled_message(
+            repository=self.repository,
+            message_id=messages.assistant.id,
+            partial_text="Partial answer",
+            updated_at="2026-03-07T00:00:04+00:00",
+            model="test-model",
+            thinking_completed_at="2026-03-07T00:00:02.500000+00:00",
+        )
+
+        self.assertIsNotNone(backfilled)
+        self.assertEqual(
+            backfilled.thinking_completed_at,
+            "2026-03-07T00:00:02.500000+00:00",
+        )
+        self.assertEqual(backfilled.status, "cancelled")
+
+        stored_message = await self.repository.get_message(messages.assistant.id)
+        self.assertIsNotNone(stored_message)
+        self.assertEqual(
+            stored_message.thinking_completed_at,
+            "2026-03-07T00:00:02.500000+00:00",
+        )
+        self.assertEqual(stored_message.text_content, "Partial answer")
 
     async def test_disconnect_without_cancel_marks_message_failed(self) -> None:
         conversation, messages = await self._seed_streaming_assistant()

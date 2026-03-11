@@ -5,7 +5,9 @@ from dataclasses import dataclass
 from fastapi import FastAPI, Request
 
 from backend.app.chat.cancellation import ChatCancellationRegistry
+from backend.app.chat.domain.text import expired_upload_cutoff
 from backend.app.chat.infrastructure.persistence import ChatRepository
+from backend.app.chat.infrastructure.file_store import delete_paths
 from backend.app.core.openai_client import OpenAIGateway
 from backend.app.core.settings import AppSettings
 
@@ -19,6 +21,10 @@ class AppContainer:
 
     async def initialize(self) -> None:
         await self.chat_repository.initialize()
+        expired_paths = await self.chat_repository.delete_expired_uploads(
+            expired_upload_cutoff(self.settings.chat_upload_ttl_seconds)
+        )
+        await delete_paths(expired_paths)
 
     async def close(self) -> None:
         await self.openai_gateway.close()

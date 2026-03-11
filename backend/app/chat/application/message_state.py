@@ -21,7 +21,19 @@ async def persist_cancelled_message(
     if existing is None:
         return None
     if existing.status == "cancelled":
-        return existing
+        if existing.thinking_completed_at is not None or thinking_completed_at is None:
+            return existing
+        return await repository.update_message(
+            message_id=message_id,
+            status="cancelled",
+            preview_text=existing.preview_text,
+            text_content=existing.text_content,
+            updated_at=updated_at,
+            model=existing.model or model,
+            finish_reason=existing.finish_reason or PUBLIC_CANCELLED_FINISH_REASON,
+            error=existing.error,
+            thinking_completed_at=thinking_completed_at,
+        )
     return await repository.update_message(
         message_id=message_id,
         status="cancelled",
