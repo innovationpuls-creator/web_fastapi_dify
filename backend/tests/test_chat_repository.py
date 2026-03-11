@@ -100,6 +100,58 @@ class ChatRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(message.status, "cancelled")
 
+    async def test_initialize_migrates_existing_messages_table_for_cancelled_status(self) -> None:
+        database_path = self.base_path / "legacy-cancelled.sqlite3"
+        with sqlite3.connect(database_path) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                    status TEXT NOT NULL CHECK(status IN ('completed', 'streaming', 'failed')),
+                    preview_text TEXT NOT NULL,
+                    text_content TEXT NOT NULL,
+                    model TEXT,
+                    finish_reason TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                """
+            )
+            connection.commit()
+
+        repository = ChatRepository(
+            database_path,
+            self.base_path / "legacy-cancelled-assets",
+            self.base_path / "legacy-cancelled-uploads",
+        )
+        await repository.initialize()
+        conversation = await repository.create_conversation(
+            title="Migrated conversation",
+            created_at="2026-03-06T13:00:00+00:00",
+        )
+
+        message = await repository.create_message(
+            conversation_id=conversation.id,
+            role="assistant",
+            status="cancelled",
+            preview_text="Generation cancelled.",
+            text_content="partial output",
+            parts=[NewMessagePart(type="text", text="partial output")],
+            created_at="2026-03-06T13:00:01+00:00",
+        )
+
+        self.assertEqual(message.status, "cancelled")
+
     async def test_initialize_adds_thinking_completed_at_to_existing_messages_table(self) -> None:
         database_path = self.base_path / "legacy.sqlite3"
         with sqlite3.connect(database_path) as connection:

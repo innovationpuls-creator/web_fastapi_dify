@@ -186,6 +186,7 @@ class ChatRepository:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
+            self._migrate_messages_statuses(connection)
             connection.executescript(SCHEMA_SQL)
             self._ensure_message_columns(connection)
             connection.commit()
@@ -361,6 +362,86 @@ class ChatRepository:
             connection.execute(
                 "ALTER TABLE messages ADD COLUMN thinking_completed_at TEXT"
             )
+
+    def _table_exists(self, connection: sqlite3.Connection, table_name: str) -> bool:
+        row = connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            """,
+            (table_name,),
+        ).fetchone()
+        return row is not None
+
+    def _migrate_messages_statuses(self, connection: sqlite3.Connection) -> None:
+        if not self._table_exists(connection, "messages"):
+            return
+
+        row = connection.execute(
+            """
+            SELECT sql
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'messages'
+            """
+        ).fetchone()
+        schema_sql = (row["sql"] or "").lower() if row is not None else ""
+        if "cancelled" in schema_sql:
+            return
+
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.executescript(
+                """
+                CREATE TABLE messages__new (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                    status TEXT NOT NULL CHECK(
+                        status IN ('completed', 'streaming', 'failed', 'cancelled')
+                    ),
+                    preview_text TEXT NOT NULL,
+                    text_content TEXT NOT NULL,
+                    model TEXT,
+                    finish_reason TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                INSERT INTO messages__new (
+                    id,
+                    conversation_id,
+                    role,
+                    status,
+                    preview_text,
+                    text_content,
+                    model,
+                    finish_reason,
+                    error,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    id,
+                    conversation_id,
+                    role,
+                    status,
+                    preview_text,
+                    text_content,
+                    model,
+                    finish_reason,
+                    error,
+                    created_at,
+                    updated_at
+                FROM messages;
+
+                DROP TABLE messages;
+                ALTER TABLE messages__new RENAME TO messages;
+                """
+            )
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
 
     def _create_upload(
         self,
