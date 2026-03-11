@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   applyAssistantDelta,
   applyStreamMetaToMessages,
@@ -18,6 +18,7 @@ const createMessage = (overrides: Partial<DisplayMessage>): DisplayMessage => ({
   parts: overrides.parts ?? [{ type: "text", text: "Hello" }],
   created_at: overrides.created_at ?? baseTimestamp,
   updated_at: overrides.updated_at ?? baseTimestamp,
+  thinking_completed_at: overrides.thinking_completed_at ?? null,
   model: overrides.model ?? null,
   finish_reason: overrides.finish_reason ?? null,
   error: overrides.error ?? null,
@@ -25,6 +26,10 @@ const createMessage = (overrides: Partial<DisplayMessage>): DisplayMessage => ({
 });
 
 describe("streamLifecycle", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("updates only the targeted assistant message when applying deltas", () => {
     const userMessage = createMessage({
       clientKey: "user-1",
@@ -52,6 +57,39 @@ describe("streamLifecycle", () => {
     expect(getMessageText(nextMessages[1])).toBe("Hello world");
     expect(nextMessages[1].model).toBe("demo-model");
     expect(nextMessages[1].status).toBe("streaming");
+  });
+
+  it("freezes thinking completion time once the think block closes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-07T12:00:05.000Z"));
+
+    const assistantMessage = createMessage({
+      clientKey: "assistant-think",
+      id: "assistant-think",
+      role: "assistant",
+      parts: [{ type: "text", text: "<think>Plan" }],
+      status: "streaming",
+      thinking_completed_at: null,
+    });
+
+    const thinkingClosed = applyAssistantDelta(
+      [assistantMessage],
+      assistantMessage.clientKey,
+      " carefully</think>",
+      "demo-model",
+    );
+    expect(thinkingClosed[0].thinking_completed_at).toBe("2026-03-07T12:00:05.000Z");
+
+    vi.setSystemTime(new Date("2026-03-07T12:00:10.000Z"));
+
+    const answered = applyAssistantDelta(
+      thinkingClosed,
+      assistantMessage.clientKey,
+      " Final answer",
+      "demo-model",
+    );
+    expect(answered[0].thinking_completed_at).toBe("2026-03-07T12:00:05.000Z");
+    expect(answered[0].updated_at).toBe("2026-03-07T12:00:10.000Z");
   });
 
   it("replaces and settles assistant messages without recreating unrelated rows", () => {

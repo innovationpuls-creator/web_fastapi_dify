@@ -7,6 +7,7 @@ import {
   type GenerationOptions,
   type TextMessagePart,
 } from "../../services/api";
+import { hasCompleteThinkingBlock } from "../../utils/assistantContent";
 
 export const EMPTY_TITLE = "New chat";
 export const SIDEBAR_WIDTH = 220;
@@ -183,14 +184,35 @@ export const buildAssistantParts = (message: DisplayMessage, text: string): Disp
   return nextParts;
 };
 
-export const withAssistantText = (message: DisplayMessage, text: string, model?: string) => ({
-  ...message,
-  parts: buildAssistantParts(message, text),
-  status: "streaming" as const,
-  model: model ?? message.model ?? null,
-  updated_at: nowIso(),
-  isSkeleton: false,
-});
+export const resolveThinkingCompletedAt = (
+  thinkingCompletedAt: string | null | undefined,
+  text: string,
+  updatedAt: string,
+) => {
+  if (thinkingCompletedAt) {
+    return thinkingCompletedAt;
+  }
+
+  return hasCompleteThinkingBlock(text) ? updatedAt : null;
+};
+
+export const withAssistantText = (message: DisplayMessage, text: string, model?: string) => {
+  const updatedAt = nowIso();
+
+  return {
+    ...message,
+    parts: buildAssistantParts(message, text),
+    status: "streaming" as const,
+    model: model ?? message.model ?? null,
+    updated_at: updatedAt,
+    thinking_completed_at: resolveThinkingCompletedAt(
+      message.thinking_completed_at,
+      text,
+      updatedAt,
+    ),
+    isSkeleton: false,
+  };
+};
 
 export const isRetryableError = (error: unknown) =>
   error instanceof ApiError ? error.retryable : true;
@@ -209,6 +231,7 @@ export const describeError = (error: unknown, fallback: string) => {
 
 export const toDisplayMessage = (message: ChatMessageResponse): DisplayMessage => ({
   ...message,
+  thinking_completed_at: message.thinking_completed_at ?? null,
   clientKey: message.id,
   parts: message.parts.map((part) =>
     part.type === "image"

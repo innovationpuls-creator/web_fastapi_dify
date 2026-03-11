@@ -94,6 +94,7 @@ class ChatRepository:
         model: str | None = None,
         finish_reason: str | None = None,
         error: str | None = None,
+        thinking_completed_at: str | None = None,
     ) -> MessageRecord:
         return await asyncio.to_thread(
             self._create_message,
@@ -108,6 +109,7 @@ class ChatRepository:
             model,
             finish_reason,
             error,
+            thinking_completed_at,
         )
 
     async def update_message(
@@ -121,6 +123,7 @@ class ChatRepository:
         model: str | None = None,
         finish_reason: str | None = None,
         error: str | None = None,
+        thinking_completed_at: str | None = None,
     ) -> MessageRecord | None:
         return await asyncio.to_thread(
             self._update_message,
@@ -132,6 +135,7 @@ class ChatRepository:
             model,
             finish_reason,
             error,
+            thinking_completed_at,
         )
 
     async def create_upload(
@@ -183,6 +187,7 @@ class ChatRepository:
     def _initialize(self) -> None:
         with self._connect() as connection:
             connection.executescript(SCHEMA_SQL)
+            self._ensure_message_columns(connection)
             connection.commit()
 
     def _create_conversation(
@@ -243,6 +248,7 @@ class ChatRepository:
         model: str | None,
         finish_reason: str | None,
         error: str | None,
+        thinking_completed_at: str | None = None,
     ) -> MessageRecord:
         with self._connect() as connection:
             connection.execute(
@@ -258,9 +264,10 @@ class ChatRepository:
                     finish_reason,
                     error,
                     created_at,
-                    updated_at
+                    updated_at,
+                    thinking_completed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     message_id,
@@ -274,6 +281,7 @@ class ChatRepository:
                     error,
                     created_at,
                     created_at,
+                    thinking_completed_at,
                 ),
             )
             self._insert_message_parts(connection, message_id, parts, created_at)
@@ -294,6 +302,7 @@ class ChatRepository:
         model: str | None,
         finish_reason: str | None,
         error: str | None,
+        thinking_completed_at: str | None = None,
     ) -> MessageRecord | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -312,7 +321,8 @@ class ChatRepository:
                     model = COALESCE(?, model),
                     finish_reason = ?,
                     error = ?,
-                    updated_at = ?
+                    updated_at = ?,
+                    thinking_completed_at = COALESCE(?, thinking_completed_at)
                 WHERE id = ?
                 """,
                 (
@@ -323,6 +333,7 @@ class ChatRepository:
                     finish_reason,
                     error,
                     updated_at,
+                    thinking_completed_at,
                     message_id,
                 ),
             )
@@ -340,6 +351,16 @@ class ChatRepository:
             )
             connection.commit()
             return self._get_message_with_connection(connection, message_id)
+
+    def _ensure_message_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+        }
+        if "thinking_completed_at" not in columns:
+            connection.execute(
+                "ALTER TABLE messages ADD COLUMN thinking_completed_at TEXT"
+            )
 
     def _create_upload(
         self,

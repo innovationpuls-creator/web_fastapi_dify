@@ -48,7 +48,8 @@ LIST_MESSAGES_QUERY = """
         finish_reason,
         error,
         created_at,
-        updated_at
+        updated_at,
+        thinking_completed_at
     FROM messages
     WHERE conversation_id = ?
     ORDER BY
@@ -70,7 +71,8 @@ GET_MESSAGE_QUERY = """
         finish_reason,
         error,
         created_at,
-        updated_at
+        updated_at,
+        thinking_completed_at
     FROM messages
     WHERE id = ?
 """

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from backend.app.chat.domain.text import has_complete_thinking_block
+
 
 @dataclass(frozen=True)
 class ActiveStreamSnapshot:
@@ -12,6 +14,7 @@ class ActiveStreamSnapshot:
     model: str | None
     created_at: str
     updated_at: str
+    thinking_completed_at: str | None
 
 
 @dataclass
@@ -21,6 +24,7 @@ class ActiveStreamState:
     model: str | None
     created_at: str
     updated_at: str
+    thinking_completed_at: str | None = None
     text_content: str = ""
     cancel_event: asyncio.Event | None = None
 
@@ -36,6 +40,7 @@ class ActiveStreamState:
             model=self.model,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            thinking_completed_at=self.thinking_completed_at,
         )
 
 
@@ -51,6 +56,7 @@ class ChatCancellationRegistry:
         message_id: str,
         model: str | None,
         created_at: str,
+        thinking_completed_at: str | None = None,
     ) -> None:
         async with self._lock:
             self._streams[message_id] = ActiveStreamState(
@@ -59,15 +65,28 @@ class ChatCancellationRegistry:
                 model=model,
                 created_at=created_at,
                 updated_at=created_at,
+                thinking_completed_at=thinking_completed_at,
             )
 
-    async def append_text(self, message_id: str, delta: str, *, updated_at: str) -> None:
+    async def append_text(
+        self,
+        message_id: str,
+        delta: str,
+        *,
+        updated_at: str,
+        thinking_completed_at: str | None = None,
+    ) -> None:
         async with self._lock:
             state = self._streams.get(message_id)
             if state is None:
                 return
             state.text_content += delta
             state.updated_at = updated_at
+            if state.thinking_completed_at is None:
+                if thinking_completed_at is not None:
+                    state.thinking_completed_at = thinking_completed_at
+                elif has_complete_thinking_block(state.text_content):
+                    state.thinking_completed_at = updated_at
 
     async def request_cancel(
         self, *, conversation_id: str, message_id: str, updated_at: str

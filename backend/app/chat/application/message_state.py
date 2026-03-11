@@ -15,6 +15,7 @@ async def persist_cancelled_message(
     partial_text: str,
     updated_at: str,
     model: str | None,
+    thinking_completed_at: str | None = None,
 ) -> MessageRecord | None:
     existing = await repository.get_message(message_id)
     if existing is None:
@@ -30,4 +31,5 @@ async def persist_cancelled_message(
         model=model,
         finish_reason=PUBLIC_CANCELLED_FINISH_REASON,
         error=None,
+        thinking_completed_at=thinking_completed_at,
     )

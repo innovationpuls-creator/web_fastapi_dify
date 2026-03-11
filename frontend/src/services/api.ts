@@ -66,6 +66,7 @@ export type ChatMessageResponse = {
   parts: MessagePart[];
   created_at: string;
   updated_at: string;
+  thinking_completed_at?: string | null;
   model?: string | null;
   finish_reason?: string | null;
   error?: string | null;

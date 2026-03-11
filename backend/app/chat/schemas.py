@@ -121,6 +121,7 @@ class ChatMessageResponse(BaseModel):
     parts: list[MessagePart]
     created_at: str
     updated_at: str
+    thinking_completed_at: str | None = None
     model: str | None = None
     finish_reason: str | None = None
     error: str | None = None

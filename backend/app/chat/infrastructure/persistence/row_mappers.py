@@ -91,6 +91,7 @@ def build_message_records(
             error=row["error"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            thinking_completed_at=row["thinking_completed_at"],
             parts=parts_by_message[row["id"]],
         )
         for row in rows

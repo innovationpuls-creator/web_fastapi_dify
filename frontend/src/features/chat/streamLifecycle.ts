@@ -3,6 +3,7 @@ import {
   getMessageText,
   nowIso,
   previewFromDraft,
+  resolveThinkingCompletedAt,
   type DisplayConversation,
   type DisplayMessage,
   type StreamRuntime,
@@ -21,6 +22,7 @@ export type AssistantSettleUpdates = {
   error?: string | null;
   finishReason?: string | null;
   model?: string | null;
+  thinkingCompletedAt?: string | null;
 };
 
 const updateMessageByClientKey = (
@@ -68,13 +70,17 @@ export const settleAssistantMessages = (
 ) =>
   updateMessageByClientKey(messages, assistantClientKey, (message) => {
     const text = getMessageText(message);
+    const updatedAt = nowIso();
     return {
       ...message,
       status: updates.status,
       error: updates.error ?? null,
       finish_reason: updates.finishReason ?? message.finish_reason ?? null,
       model: updates.model ?? message.model ?? null,
-      updated_at: nowIso(),
+      updated_at: updatedAt,
+      thinking_completed_at:
+        updates.thinkingCompletedAt ??
+        resolveThinkingCompletedAt(message.thinking_completed_at, text, updatedAt),
       parts: buildAssistantParts(message, text),
       isSkeleton: false,
     };
@@ -88,12 +94,18 @@ export const applyAssistantDelta = (
 ) =>
   updateMessageByClientKey(messages, assistantClientKey, (message) => {
     const text = `${getMessageText(message)}${delta}`;
+    const updatedAt = nowIso();
     return {
       ...message,
       parts: buildAssistantParts(message, text),
       status: "streaming" as const,
       model: model ?? message.model ?? null,
-      updated_at: nowIso(),
+      updated_at: updatedAt,
+      thinking_completed_at: resolveThinkingCompletedAt(
+        message.thinking_completed_at,
+        text,
+        updatedAt,
+      ),
       isSkeleton: false,
     };
   });
