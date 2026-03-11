@@ -65,6 +65,7 @@ def message_to_response(message: MessageRecord) -> ChatMessageResponse:
         parts=[message_part_to_schema(part) for part in message.parts],
         created_at=message.created_at,
         updated_at=message.updated_at,
+        thinking_completed_at=message.thinking_completed_at,
         model=message.model,
         finish_reason=message.finish_reason,
         error=message.error,

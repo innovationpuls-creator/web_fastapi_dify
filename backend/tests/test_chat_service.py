@@ -330,6 +330,103 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored_message.finish_reason, "length")
         self.assertEqual(stored_message.text_content, "Partial answer")
 
+    async def test_generate_chat_stream_persists_thinking_completion_time(self) -> None:
+        conversation, messages = await self._seed_streaming_assistant()
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
+        prepared = PreparedChatStream(
+            stream=FakeStream(
+                [
+                    (0.0, FakeChunk(delta="<think>Plan")),
+                    (0.02, FakeChunk(delta=" carefully</think>")),
+                    (0.02, FakeChunk(delta=" Final answer")),
+                    (0.0, FakeChunk(finish_reason="stop")),
+                ]
+            ),
+            start_time=0.0,
+            message_count=1,
+            model="test-model",
+            conversation=conversation,
+            user_message=messages.user,
+            assistant_message=messages.assistant,
+        )
+
+        events: list[dict[str, object]] = []
+
+        async for payload in stream_service.generate_chat_stream(request, prepared):
+            events.append(json.loads(payload.decode("utf-8")))
+
+        stored_message = await self.repository.get_message(messages.assistant.id)
+        self.assertIsNotNone(stored_message)
+        self.assertIsNotNone(stored_message.thinking_completed_at)
+        self.assertNotEqual(
+            stored_message.thinking_completed_at,
+            stored_message.updated_at,
+        )
+        self.assertEqual(
+            events[-1]["message"]["thinking_completed_at"],
+            stored_message.thinking_completed_at,
+        )
+
+    async def test_cancelled_stream_preserves_thinking_completion_time(self) -> None:
+        conversation, messages = await self._seed_streaming_assistant()
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
+        conversation_service = ConversationService(self.repository, self.registry)
+        prepared = PreparedChatStream(
+            stream=FakeStream(
+                [
+                    (0.0, FakeChunk(delta="<think>Plan")),
+                    (0.0, FakeChunk(delta=" carefully</think>")),
+                    (0.0, FakeChunk(delta=" Partial answer")),
+                    (0.5, FakeChunk(delta=" more")),
+                ]
+            ),
+            start_time=0.0,
+            message_count=1,
+            model="test-model",
+            conversation=conversation,
+            user_message=messages.user,
+            assistant_message=messages.assistant,
+        )
+
+        third_delta_seen = asyncio.Event()
+        delta_count = 0
+
+        async def consume() -> None:
+            nonlocal delta_count
+            async for payload in stream_service.generate_chat_stream(request, prepared):
+                event = json.loads(payload.decode("utf-8"))
+                if event["event"] == "delta":
+                    delta_count += 1
+                    if delta_count == 3:
+                        third_delta_seen.set()
+
+        consumer = asyncio.create_task(consume())
+        await asyncio.wait_for(third_delta_seen.wait(), timeout=1)
+        await asyncio.sleep(0.02)
+
+        cancelled = await conversation_service.cancel_message(
+            conversation.id,
+            messages.assistant.id,
+        )
+        await asyncio.wait_for(consumer, timeout=1)
+
+        self.assertIsNotNone(cancelled)
+        self.assertEqual(cancelled.message.status, "cancelled")
+        self.assertIsNotNone(cancelled.message.thinking_completed_at)
+        self.assertNotEqual(
+            cancelled.message.thinking_completed_at,
+            cancelled.message.updated_at,
+        )
+
+        stored_message = await self.repository.get_message(messages.assistant.id)
+        self.assertIsNotNone(stored_message)
+        self.assertEqual(
+            stored_message.thinking_completed_at,
+            cancelled.message.thinking_completed_at,
+        )
+
     async def test_prepare_chat_stream_consumes_uploaded_image(self) -> None:
         upload_path = self.base_path / "uploads" / "upload-image.webp"
         upload_path.write_bytes(b"RIFFmockwebp")

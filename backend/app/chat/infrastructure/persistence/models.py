@@ -48,6 +48,7 @@ class MessageRecord:
     error: str | None
     created_at: str
     updated_at: str
+    thinking_completed_at: str | None
     parts: list[MessagePartRecord]
 
 

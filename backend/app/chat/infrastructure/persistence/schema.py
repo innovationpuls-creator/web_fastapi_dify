@@ -19,7 +19,8 @@ SCHEMA_SQL = """
         finish_reason TEXT,
         error TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        thinking_completed_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS assets (

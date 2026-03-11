@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 import re
 
-from backend.app.chat.domain.constants import THINK_BLOCK_PATTERN
+from backend.app.chat.domain.constants import (
+    COMPLETE_THINK_BLOCK_PATTERN,
+    THINK_BLOCK_PATTERN,
+)
 from backend.app.chat.schemas import ImageInputPart, InputPart, TextInputPart
 
 
@@ -46,6 +49,10 @@ def preview_from_input_parts(parts: list[InputPart]) -> str:
 def strip_reasoning_blocks(value: str) -> str:
     stripped = THINK_BLOCK_PATTERN.sub("", value)
     return re.sub(r"\n{3,}", "\n\n", stripped).strip()
+
+
+def has_complete_thinking_block(value: str) -> bool:
+    return COMPLETE_THINK_BLOCK_PATTERN.search(value) is not None
 
 
 def preview_from_text(value: str, *, fallback: str) -> str:

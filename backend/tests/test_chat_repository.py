@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import shutil
+import sqlite3
 import unittest
 
 from backend.app.chat.infrastructure.persistence import (
@@ -98,6 +99,52 @@ class ChatRepositoryTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(message.status, "cancelled")
+
+    async def test_initialize_adds_thinking_completed_at_to_existing_messages_table(self) -> None:
+        database_path = self.base_path / "legacy.sqlite3"
+        with sqlite3.connect(database_path) as connection:
+            connection.executescript(
+                """
+                CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                    status TEXT NOT NULL CHECK(
+                        status IN ('completed', 'streaming', 'failed', 'cancelled')
+                    ),
+                    preview_text TEXT NOT NULL,
+                    text_content TEXT NOT NULL,
+                    model TEXT,
+                    finish_reason TEXT,
+                    error TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                """
+            )
+            connection.commit()
+
+        repository = ChatRepository(
+            database_path,
+            self.base_path / "legacy-assets",
+            self.base_path / "legacy-uploads",
+        )
+        await repository.initialize()
+
+        with sqlite3.connect(database_path) as connection:
+            columns = {
+                row[1]
+                for row in connection.execute("PRAGMA table_info(messages)").fetchall()
+            }
+
+        self.assertIn("thinking_completed_at", columns)
 
     async def test_create_pop_delete_and_expire_uploads(self) -> None:
         created = await self.repository.create_upload(

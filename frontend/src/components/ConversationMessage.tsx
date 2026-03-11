@@ -11,13 +11,18 @@ export type ConversationMessageProps = {
   previousUserText?: string;
 };
 
-const formatThoughtSummary = (createdAt: string, updatedAt: string, isStreaming: boolean) => {
+export const formatThoughtSummary = (
+  createdAt: string,
+  updatedAt: string,
+  thinkingCompletedAt: string | null | undefined,
+  isStreaming: boolean,
+) => {
   if (isStreaming) {
     return "Thinking...";
   }
 
   const startedAt = Date.parse(createdAt);
-  const settledAt = Date.parse(updatedAt);
+  const settledAt = Date.parse(thinkingCompletedAt ?? updatedAt);
   if (!Number.isFinite(startedAt) || !Number.isFinite(settledAt) || settledAt <= startedAt) {
     return "Thought complete";
   }
@@ -90,6 +95,7 @@ const ConversationMessageComponent = ({
   const thoughtSummary = formatThoughtSummary(
     message.created_at,
     message.updated_at,
+    message.thinking_completed_at,
     isStreaming && !assistantDisplay.thinkingComplete,
   );
 

@@ -12,6 +12,20 @@ const TRANSCRIPT_ROLE_PATTERN =
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+export const hasCompleteThinkingBlock = (content: string) => {
+  if (!content) {
+    return false;
+  }
+
+  const lowerContent = content.toLowerCase();
+  const openIndex = lowerContent.indexOf(THINK_OPEN_TOKEN);
+  if (openIndex < 0) {
+    return false;
+  }
+
+  return lowerContent.indexOf(THINK_CLOSE_TOKEN, openIndex + THINK_OPEN_TOKEN.length) >= 0;
+};
+
 const stripLeadingEchoedPrompt = (answerText: string, previousUserText: string) => {
   const normalizedPrompt = previousUserText.trim();
   if (!normalizedPrompt) {

@@ -33,6 +33,7 @@ from backend.app.chat.domain.models import PreparedChatStream, PreparedImage, Pr
 from backend.app.chat.domain.text import (
     derive_title,
     expired_upload_cutoff,
+    has_complete_thinking_block,
     preview_from_input_parts,
     preview_from_text,
     utc_now,
@@ -229,6 +230,7 @@ class ChatStreamService:
             message_id=assistant_message.id,
             model=self.settings.openai_model,
             created_at=assistant_message.created_at,
+            thinking_completed_at=assistant_message.thinking_completed_at,
         )
         refreshed_conversation = await self.repository.get_conversation(conversation.id)
         return PreparedChatStream(
@@ -248,6 +250,7 @@ class ChatStreamService:
     ) -> AsyncGenerator[bytes, None]:
         full_content_parts: list[str] = []
         finish_reason: str | None = None
+        thinking_completed_at = prepared_stream.assistant_message.thinking_completed_at
         stream = prepared_stream.stream
         start_time = prepared_stream.start_time
         chunk_count = 0
@@ -266,6 +269,7 @@ class ChatStreamService:
                 partial_text=partial_text,
                 updated_at=utc_now(),
                 model=prepared_stream.model,
+                thinking_completed_at=thinking_completed_at,
             )
             updated_conversation = await self.repository.get_conversation(
                 prepared_stream.conversation.id
@@ -348,6 +352,7 @@ class ChatStreamService:
                         updated_at=utc_now(),
                         model=prepared_stream.model,
                         error="Client disconnected.",
+                        thinking_completed_at=thinking_completed_at,
                     )
                     duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
                     logger.warning(
@@ -390,10 +395,18 @@ class ChatStreamService:
 
                 chunk_count += 1
                 full_content_parts.append(delta)
+                partial_text = "".join(full_content_parts)
+                delta_updated_at = utc_now()
+                if (
+                    thinking_completed_at is None
+                    and has_complete_thinking_block(partial_text)
+                ):
+                    thinking_completed_at = delta_updated_at
                 await self.cancellation_registry.append_text(
                     prepared_stream.assistant_message.id,
                     delta,
-                    updated_at=utc_now(),
+                    updated_at=delta_updated_at,
+                    thinking_completed_at=thinking_completed_at,
                 )
                 yield serialize_event(
                     ChatStreamEvent(
@@ -416,6 +429,7 @@ class ChatStreamService:
                 model=prepared_stream.model,
                 finish_reason=finish_reason,
                 error=None,
+                thinking_completed_at=thinking_completed_at,
             )
             updated_conversation = await self.repository.get_conversation(
                 prepared_stream.conversation.id
@@ -459,6 +473,7 @@ class ChatStreamService:
                 model=prepared_stream.model,
                 finish_reason=finish_reason,
                 error=PUBLIC_STREAM_ERROR,
+                thinking_completed_at=thinking_completed_at,
             )
             logger.exception(
                 "chat_stream_upstream_error",
@@ -496,6 +511,7 @@ class ChatStreamService:
                 model=prepared_stream.model,
                 finish_reason=finish_reason,
                 error="Internal server error.",
+                thinking_completed_at=thinking_completed_at,
             )
             logger.exception(
                 "chat_stream_unexpected_error",

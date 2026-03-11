@@ -73,6 +73,7 @@ class ConversationService:
                 partial_text=snapshot.text_content,
                 updated_at=now,
                 model=snapshot.model or message.model,
+                thinking_completed_at=snapshot.thinking_completed_at,
             )
             conversation = await self.repository.get_conversation(conversation_id)
             if updated_message is None or conversation is None:
@@ -89,6 +90,7 @@ class ConversationService:
                 partial_text=message.text_content,
                 updated_at=now,
                 model=message.model,
+                thinking_completed_at=message.thinking_completed_at,
             )
             conversation = await self.repository.get_conversation(conversation_id)
             if updated_message is None or conversation is None:

@@ -26,3 +26,8 @@ THINK_BLOCK_PATTERN = re.compile(
     r"<think\b[^>]*>.*?(?:</think\s*>|$)",
     re.IGNORECASE | re.DOTALL,
 )
+
+COMPLETE_THINK_BLOCK_PATTERN = re.compile(
+    r"<think\b[^>]*>.*?</think\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
