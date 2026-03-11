@@ -22,12 +22,10 @@ from backend.app.chat.application.presenters import (
 from backend.app.chat.cancellation import ChatCancellationRegistry
 from backend.app.chat.domain.constants import (
     IMAGE_EXTENSION_BY_MEDIA_TYPE,
-    NDJSON_MEDIA_TYPE,
     PUBLIC_CANCELLED_FINISH_REASON,
     PUBLIC_STREAM_ERROR,
     PUBLIC_UPLOAD_NOT_FOUND_ERROR,
     PUBLIC_UPSTREAM_ERROR,
-    STREAM_HEADERS,
 )
 from backend.app.chat.domain.errors import ChatPreStreamError
 from backend.app.chat.domain.media import normalize_base64
