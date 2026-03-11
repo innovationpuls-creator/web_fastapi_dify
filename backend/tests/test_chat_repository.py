@@ -72,47 +72,19 @@ class ChatRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deleted_paths, [self.base_path / "assets" / "asset-1.webp"])
         self.assertIsNone(await self.repository.get_conversation(conversation.id))
 
-    async def test_initialize_migrates_existing_messages_table_for_cancelled_status(self) -> None:
-        legacy_db_path = self.base_path / "legacy.sqlite3"
-        with sqlite3.connect(legacy_db_path) as connection:
-            connection.executescript(
-                """
-                CREATE TABLE conversations (
-                    id TEXT PRIMARY KEY,
-                    title TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE messages (
-                    id TEXT PRIMARY KEY,
-                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-                    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-                    status TEXT NOT NULL CHECK(status IN ('completed', 'streaming', 'failed')),
-                    preview_text TEXT NOT NULL,
-                    text_content TEXT NOT NULL,
-                    model TEXT,
-                    finish_reason TEXT,
-                    error TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                """
-            )
-            connection.commit()
-
-        migrated_repository = ChatRepository(
-            legacy_db_path,
-            self.base_path / "legacy-assets",
-            self.base_path / "legacy-uploads",
+    async def test_initialize_creates_schema_supporting_cancelled_status(self) -> None:
+        repository = ChatRepository(
+            self.base_path / "cancelled.sqlite3",
+            self.base_path / "cancelled-assets",
+            self.base_path / "cancelled-uploads",
         )
-        await migrated_repository.initialize()
-        conversation = await migrated_repository.create_conversation(
-            title="Migrated conversation",
+        await repository.initialize()
+        conversation = await repository.create_conversation(
+            title="Cancelled conversation",
             created_at="2026-03-06T13:00:00+00:00",
         )
 
-        message = await migrated_repository.create_message(
+        message = await repository.create_message(
             conversation_id=conversation.id,
             role="assistant",
             status="cancelled",

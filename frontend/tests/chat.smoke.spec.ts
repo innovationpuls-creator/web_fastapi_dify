@@ -18,7 +18,7 @@ async function mockBootstrap(page: Page) {
     });
   });
 
-  await page.route("http://127.0.0.1:8000/conversations", async (route) => {
+  await page.route("http://127.0.0.1:8000/chat/conversations", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -26,7 +26,7 @@ async function mockBootstrap(page: Page) {
     });
   });
 
-  await page.route(/http:\/\/127\.0\.0\.1:8000\/conversations\/.+/, async (route) => {
+  await page.route(/http:\/\/127\.0\.0\.1:8000\/chat\/conversations\/.+/, async (route) => {
     await route.fulfill({
       status: 404,
       contentType: "application/json",

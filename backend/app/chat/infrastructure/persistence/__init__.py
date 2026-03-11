@@ -1,6 +1,5 @@
-from backend.app.chat.infrastructure.persistence import (
+from backend.app.chat.infrastructure.persistence.models import (
     AssetRecord,
-    ChatRepository,
     ConversationRecord,
     MessagePartRecord,
     MessageRecord,
@@ -10,6 +9,7 @@ from backend.app.chat.infrastructure.persistence import (
     NewMessagePart,
     UploadRecord,
 )
+from backend.app.chat.infrastructure.persistence.repository import ChatRepository
 
 __all__ = [
     "AssetRecord",
