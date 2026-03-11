@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sqlite3
 import shutil
 import unittest
 
-from backend.app.chat.repository import ChatRepository, NewAsset, NewMessagePart
+from backend.app.chat.infrastructure.persistence import (
+    ChatRepository,
+    NewAsset,
+    NewMessagePart,
+)
 
 
 class ChatRepositoryTests(unittest.IsolatedAsyncioTestCase):
