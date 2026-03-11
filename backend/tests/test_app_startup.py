@@ -52,6 +52,7 @@ class AppStartupSmokeTests(unittest.TestCase):
         route_paths = json.loads(result.stdout.strip().splitlines()[-1])
         self.assertIn("/chat/stream", route_paths)
         self.assertIn("/chat/uploads", route_paths)
-        self.assertIn("/conversations", route_paths)
+        self.assertIn("/chat/conversations", route_paths)
+        self.assertIn("/chat/conversations/{conversation_id}", route_paths)
         self.assertIn("/health", route_paths)
         self.assertIn("/health/deep", route_paths)

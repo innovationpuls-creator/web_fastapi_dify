@@ -303,17 +303,22 @@ export const getHealth = () => requestJson<HealthResponse>("/health");
 
 export const getDeepHealth = () => requestJson<DeepHealthResponse>("/health/deep");
 
-export const listConversations = () => requestJson<ConversationSummary[]>("/conversations");
+export const listConversations = () =>
+  requestJson<ConversationSummary[]>("/chat/conversations");
 
 export const getConversation = (conversationId: string) =>
-  requestJson<ConversationDetail>(`/conversations/${conversationId}`);
+  requestJson<ConversationDetail>(`/chat/conversations/${conversationId}`);
 
 export const deleteConversation = (conversationId: string) =>
-  requestJson<void>(`/conversations/${conversationId}`, { method: "DELETE" }, { allowEmpty: true });
+  requestJson<void>(
+    `/chat/conversations/${conversationId}`,
+    { method: "DELETE" },
+    { allowEmpty: true },
+  );
 
 export const cancelConversationMessage = (conversationId: string, messageId: string) =>
   requestJson<CancelMessageResponse>(
-    `/conversations/${conversationId}/messages/${messageId}/cancel`,
+    `/chat/conversations/${conversationId}/messages/${messageId}/cancel`,
     {
       method: "POST",
     },

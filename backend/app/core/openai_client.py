@@ -1,7 +1,30 @@
+from dataclasses import dataclass
+from typing import Any
+
 import httpx
 from openai import AsyncOpenAI
 
 from backend.app.core.settings import AppSettings
+
+
+@dataclass(slots=True)
+class OpenAIGateway:
+    client: AsyncOpenAI
+
+    async def create_chat_stream(self, request_args: dict[str, Any]) -> Any:
+        return await self.client.chat.completions.create(**request_args)
+
+    async def probe_health(self, *, model: str, timeout: httpx.Timeout) -> None:
+        await self.client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            temperature=0.0,
+            max_tokens=1,
+            timeout=timeout,
+        )
+
+    async def close(self) -> None:
+        await self.client.close()
 
 
 def build_openai_timeout(settings: AppSettings) -> httpx.Timeout:
@@ -24,3 +47,7 @@ def create_openai_client(settings: AppSettings) -> AsyncOpenAI:
         base_url=settings.openai_base_url,
         timeout=build_openai_timeout(settings),
     )
+
+
+def create_openai_gateway(settings: AppSettings) -> OpenAIGateway:
+    return OpenAIGateway(client=create_openai_client(settings))

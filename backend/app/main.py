@@ -1,52 +1,54 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import Callable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.chat.cancellation import ChatCancellationRegistry
-from backend.app.chat.repository import ChatRepository
-from backend.app.chat.router import router as chat_router
+from backend.app.chat.api.router import router as chat_router
+from backend.app.chat.infrastructure.persistence import ChatRepository
+from backend.app.core.container import AppContainer, set_app_container
 from backend.app.core.logging import configure_logging
-from backend.app.core.openai_client import create_openai_client
-from backend.app.core.settings import get_settings
+from backend.app.core.openai_client import create_openai_gateway
+from backend.app.core.settings import AppSettings, get_settings
 from backend.app.health.router import router as health_router
 from backend.app.middleware.request_logging import register_request_logging_middleware
 
 logger = logging.getLogger(__name__)
 
 
-def create_app() -> FastAPI:
-    settings = get_settings()
-    configure_logging(settings.log_level)
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        app.state.chat_repository = ChatRepository(
+def build_app_container(settings: AppSettings) -> AppContainer:
+    return AppContainer(
+        settings=settings,
+        chat_repository=ChatRepository(
             settings.chat_database_path,
             settings.chat_assets_dir,
             settings.chat_uploads_dir,
-        )
-        await app.state.chat_repository.initialize()
-        expired_paths = await app.state.chat_repository.delete_expired_uploads(
-            (
-                datetime.now(UTC) - timedelta(seconds=settings.chat_upload_ttl_seconds)
-            ).isoformat(timespec="seconds")
-        )
-        if expired_paths:
-            for path in expired_paths:
-                await asyncio.to_thread(Path(path).unlink, missing_ok=True)
-        app.state.chat_cancellation_registry = ChatCancellationRegistry()
-        app.state.openai_client = create_openai_client(settings)
+        ),
+        chat_cancellation_registry=ChatCancellationRegistry(),
+        openai_gateway=create_openai_gateway(settings),
+    )
+
+
+def create_app(
+    container_factory: Callable[[AppSettings], AppContainer] | None = None,
+) -> FastAPI:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    container_factory = container_factory or build_app_container
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        container = container_factory(settings)
+        await container.initialize()
+        set_app_container(app, container)
         logger.info(
             "application_started",
             extra={"feature": "startup", "model": settings.openai_model},
         )
         yield
-        await app.state.openai_client.close()
+        await container.close()
         logger.info(
             "application_stopped",
             extra={"feature": "shutdown", "model": settings.openai_model},
@@ -57,7 +59,6 @@ def create_app() -> FastAPI:
         version=settings.app_version,
         lifespan=lifespan,
     )
-    app.state.settings = settings
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,

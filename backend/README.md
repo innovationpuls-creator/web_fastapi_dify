@@ -76,13 +76,13 @@
   - 应用存活检查。
 - `GET /health/deep`
   - 上游模型连通性检查。
-- `GET /conversations`
+- `GET /chat/conversations`
   - 获取会话摘要列表。
-- `GET /conversations/{conversation_id}`
+- `GET /chat/conversations/{conversation_id}`
   - 获取单个会话及其消息详情。
-- `DELETE /conversations/{conversation_id}`
+- `DELETE /chat/conversations/{conversation_id}`
   - 删除会话和关联资产。
-- `POST /conversations/{conversation_id}/messages/{message_id}/cancel`
+- `POST /chat/conversations/{conversation_id}/messages/{message_id}/cancel`
   - 取消一条正在生成的 assistant 消息。
 - `POST /chat/uploads`
   - 上传临时图片。

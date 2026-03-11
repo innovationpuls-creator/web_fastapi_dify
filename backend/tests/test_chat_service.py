@@ -8,16 +8,15 @@ import shutil
 from types import SimpleNamespace
 import unittest
 
-from backend.app.chat.cancellation import ChatCancellationRegistry
-from backend.app.chat.repository import ChatRepository, NewMessagePart
-from backend.app.chat.service import (
+from backend.app.chat.application.conversations import ConversationService
+from backend.app.chat.application.streaming import (
+    ChatStreamService,
     PreparedChatStream,
-    _utc_now,
     build_chat_request_args,
-    cancel_message,
-    generate_chat_stream,
-    prepare_chat_stream,
 )
+from backend.app.chat.cancellation import ChatCancellationRegistry
+from backend.app.chat.domain.text import utc_now
+from backend.app.chat.infrastructure.persistence import ChatRepository, NewMessagePart
 from backend.app.chat.schemas import ChatStreamRequest
 
 
@@ -57,40 +56,24 @@ class FakeStream:
         self.closed = True
 
 
-class FakeCompletionsClient:
+class FakeGateway:
     def __init__(self, stream: FakeStream) -> None:
         self.stream = stream
-        self.last_kwargs: dict[str, object] | None = None
+        self.last_request_args: dict[str, object] | None = None
 
-    async def create(self, **_: object) -> FakeStream:
-        self.last_kwargs = dict(_)
+    async def create_chat_stream(self, request_args: dict[str, object]) -> FakeStream:
+        self.last_request_args = dict(request_args)
         return self.stream
 
+    async def probe_health(self, **_: object) -> None:
+        return None
 
-class FakeOpenAIClient:
-    def __init__(self, stream: FakeStream) -> None:
-        self.completions = FakeCompletionsClient(stream)
-        self.chat = SimpleNamespace(completions=self.completions)
+    async def close(self) -> None:
+        return None
 
 
 class FakeRequest:
-    def __init__(
-        self,
-        *,
-        repository: ChatRepository,
-        registry: ChatCancellationRegistry,
-        settings: SimpleNamespace | None = None,
-        openai_client: object | None = None,
-        path: str = "/chat/stream",
-    ) -> None:
-        self.app = SimpleNamespace(
-            state=SimpleNamespace(
-                chat_repository=repository,
-                chat_cancellation_registry=registry,
-                settings=settings,
-                openai_client=openai_client,
-            )
-        )
+    def __init__(self, *, path: str = "/chat/stream") -> None:
         self.state = SimpleNamespace(request_id="test-request")
         self.method = "POST"
         self.url = SimpleNamespace(path=path)
@@ -159,9 +142,19 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         return conversation, SimpleNamespace(user=user_message, assistant=assistant_message)
 
+    def _create_stream_service(self, stream: FakeStream | None = None) -> ChatStreamService:
+        return ChatStreamService(
+            repository=self.repository,
+            cancellation_registry=self.registry,
+            openai_gateway=FakeGateway(stream or FakeStream([])),
+            settings=self.settings,
+        )
+
     async def test_generate_chat_stream_persists_cancelled_message(self) -> None:
         conversation, messages = await self._seed_streaming_assistant()
-        request = FakeRequest(repository=self.repository, registry=self.registry)
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
+        conversation_service = ConversationService(self.repository, self.registry)
         stream = FakeStream(
             [
                 (0.0, FakeChunk(delta="Hello")),
@@ -182,7 +175,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         first_delta_seen = asyncio.Event()
 
         async def consume() -> None:
-            async for payload in generate_chat_stream(request, prepared):
+            async for payload in stream_service.generate_chat_stream(request, prepared):
                 event = json.loads(payload.decode("utf-8"))
                 events.append(event)
                 if event["event"] == "delta":
@@ -191,7 +184,10 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         consumer = asyncio.create_task(consume())
         await asyncio.wait_for(first_delta_seen.wait(), timeout=1)
 
-        cancelled = await cancel_message(request, conversation.id, messages.assistant.id)
+        cancelled = await conversation_service.cancel_message(
+            conversation.id,
+            messages.assistant.id,
+        )
         await asyncio.wait_for(consumer, timeout=1)
 
         self.assertIsNotNone(cancelled)
@@ -207,10 +203,16 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancel_message_is_idempotent(self) -> None:
         conversation, messages = await self._seed_streaming_assistant()
-        request = FakeRequest(repository=self.repository, registry=self.registry, path="/cancel")
+        conversation_service = ConversationService(self.repository, self.registry)
 
-        first = await cancel_message(request, conversation.id, messages.assistant.id)
-        second = await cancel_message(request, conversation.id, messages.assistant.id)
+        first = await conversation_service.cancel_message(
+            conversation.id,
+            messages.assistant.id,
+        )
+        second = await conversation_service.cancel_message(
+            conversation.id,
+            messages.assistant.id,
+        )
 
         self.assertIsNotNone(first)
         self.assertIsNotNone(second)
@@ -219,7 +221,8 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_disconnect_without_cancel_marks_message_failed(self) -> None:
         conversation, messages = await self._seed_streaming_assistant()
-        request = FakeRequest(repository=self.repository, registry=self.registry)
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
         stream = FakeStream(
             [
                 (0.0, FakeChunk(delta="Hello")),
@@ -239,7 +242,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         first_delta_seen = asyncio.Event()
 
         async def consume() -> None:
-            async for payload in generate_chat_stream(request, prepared):
+            async for payload in stream_service.generate_chat_stream(request, prepared):
                 event = json.loads(payload.decode("utf-8"))
                 if event["event"] == "delta":
                     first_delta_seen.set()
@@ -256,7 +259,9 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_cancelled_beats_disconnect(self) -> None:
         conversation, messages = await self._seed_streaming_assistant()
-        request = FakeRequest(repository=self.repository, registry=self.registry)
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
+        conversation_service = ConversationService(self.repository, self.registry)
         stream = FakeStream(
             [
                 (0.0, FakeChunk(delta="Hello")),
@@ -276,14 +281,14 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         first_delta_seen = asyncio.Event()
 
         async def consume() -> None:
-            async for payload in generate_chat_stream(request, prepared):
+            async for payload in stream_service.generate_chat_stream(request, prepared):
                 event = json.loads(payload.decode("utf-8"))
                 if event["event"] == "delta":
                     first_delta_seen.set()
 
         consumer = asyncio.create_task(consume())
         await asyncio.wait_for(first_delta_seen.wait(), timeout=1)
-        await cancel_message(request, conversation.id, messages.assistant.id)
+        await conversation_service.cancel_message(conversation.id, messages.assistant.id)
         request.disconnect()
         await asyncio.wait_for(consumer, timeout=1)
 
@@ -293,7 +298,8 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_generate_chat_stream_persists_length_finish_reason(self) -> None:
         conversation, messages = await self._seed_streaming_assistant()
-        request = FakeRequest(repository=self.repository, registry=self.registry)
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
         prepared = PreparedChatStream(
             stream=FakeStream(
                 [
@@ -311,7 +317,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
 
         events: list[dict[str, object]] = []
 
-        async for payload in generate_chat_stream(request, prepared):
+        async for payload in stream_service.generate_chat_stream(request, prepared):
             events.append(json.loads(payload.decode("utf-8")))
 
         self.assertEqual(events[-1]["event"], "done")
@@ -346,14 +352,15 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
         )
-        request = FakeRequest(
+        gateway = FakeGateway(FakeStream([(0.0, FakeChunk(delta="ok"))]))
+        stream_service = ChatStreamService(
             repository=self.repository,
-            registry=self.registry,
+            cancellation_registry=self.registry,
+            openai_gateway=gateway,
             settings=self.settings,
-            openai_client=FakeOpenAIClient(FakeStream([(0.0, FakeChunk(delta="ok"))])),
         )
 
-        prepared = await prepare_chat_stream(request, payload)
+        prepared = await stream_service.prepare_chat_stream(FakeRequest(), payload)
 
         self.assertIsNone(await self.repository.get_upload("upload-image"))
         self.assertEqual(prepared.user_message.parts[0].type, "text")
@@ -373,18 +380,18 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                 }
             }
         )
-        client = FakeOpenAIClient(FakeStream([(0.0, FakeChunk(delta="ok"))]))
-        request = FakeRequest(
+        gateway = FakeGateway(FakeStream([(0.0, FakeChunk(delta="ok"))]))
+        stream_service = ChatStreamService(
             repository=self.repository,
-            registry=self.registry,
+            cancellation_registry=self.registry,
+            openai_gateway=gateway,
             settings=self.settings,
-            openai_client=client,
         )
 
-        prepared = await prepare_chat_stream(request, payload)
+        prepared = await stream_service.prepare_chat_stream(FakeRequest(), payload)
 
-        self.assertIsNotNone(client.completions.last_kwargs)
-        messages = client.completions.last_kwargs["messages"]
+        self.assertIsNotNone(gateway.last_request_args)
+        messages = gateway.last_request_args["messages"]
         self.assertEqual(messages[0]["role"], "system")
         self.assertEqual(messages[0]["content"], self.settings.openai_system_prompt)
         self.assertEqual(messages[1]["role"], "user")
@@ -392,7 +399,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         await prepared.stream.close()
 
     def test_utc_now_keeps_subsecond_precision(self) -> None:
-        self.assertRegex(_utc_now(), r"\.\d{6}\+00:00$")
+        self.assertRegex(utc_now(), r"\.\d{6}\+00:00$")
 
     def test_build_chat_request_args_includes_system_prompt(self) -> None:
         payload = ChatStreamRequest.model_validate(
