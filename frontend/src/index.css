@@ -117,134 +117,257 @@ textarea::placeholder {
 
 .composer-shell {
   position: relative;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  background: rgba(255, 255, 255, 0.028);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 0 0 1px rgba(255, 255, 255, 0.025);
   overflow: visible;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    border-color var(--motion-duration-fast) var(--motion-ease-standard),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .composer-shell::after {
-  content: "";
-  position: absolute;
-  right: 1.4rem;
-  bottom: 0;
-  left: 1.4rem;
-  height: 2px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.94), transparent);
-  opacity: 0;
-  transform: scaleX(0.82);
-  transform-origin: center;
+  content: none;
+}
+
+.composer-message-region {
+  position: relative;
+}
+
+.messageBox {
+  position: relative;
+  width: 100%;
+  min-height: 3rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.35rem;
+  background: #1c1c1e;
+  padding: 0.35rem 0.55rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.messageBox:hover,
+.messageBox.is-focused,
+.messageBox:focus-within {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.12),
+    0 0 24px rgba(255, 255, 255, 0.08),
+    0 0 48px rgba(255, 255, 255, 0.04);
+}
+
+.messageBox.is-dragging {
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 0 10px rgba(255, 255, 255, 0.12),
+    0 0 28px rgba(255, 255, 255, 0.08),
+    0 0 56px rgba(255, 255, 255, 0.05);
+}
+
+.messageBox:active,
+.messageBox:has(textarea:active),
+.messageBox:has(button:active) {
+  transform: scale(0.97);
+}
+
+.composer-inline-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 1.25rem;
+  padding: 0.1rem 0.15rem 0;
+}
+
+.composer-inline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  color: rgba(191, 191, 191, 0.88);
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.composer-inline-stop {
+  color: rgba(191, 191, 191, 0.88);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
   transition:
+    color var(--motion-duration-fast) var(--motion-ease-standard),
     opacity var(--motion-duration-fast) var(--motion-ease-standard),
     transform var(--motion-duration-fast) var(--motion-ease-standard);
-  pointer-events: none;
 }
 
-.composer-shell:hover {
-  background: rgba(255, 255, 255, 0.036);
-  border-color: rgba(255, 255, 255, 0.14);
+.composer-inline-stop:hover {
+  color: #ffffff;
 }
 
-.composer-shell.is-dragging {
-  border-color: rgba(96, 165, 250, 0.26);
-  background: rgba(14, 20, 32, 0.9);
+.composer-inline-stop:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-.composer-shell.is-focused,
-.composer-shell:focus-within {
-  transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(116, 168, 255, 0.28);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 0 0 1px rgba(59, 130, 246, 0.18);
+.composer-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  width: 100%;
 }
 
-.composer-shell.is-focused::after,
-.composer-shell:focus-within::after {
-  opacity: 1;
-  transform: scaleX(1);
+.fileUploadWrapper {
+  width: fit-content;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .composer-tool-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  position: relative;
   border-radius: 9999px;
   color: rgba(212, 212, 216, 0.92);
+  cursor: pointer;
   transition:
     color var(--motion-duration-fast) var(--motion-ease-standard),
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    transform var(--motion-duration-fast) var(--motion-ease-standard);
+    background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.composer-tool-button:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.05);
-  transform: translateY(-1px);
+.composer-upload-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
+}
+
+.composer-upload-icon path,
+.composer-upload-icon circle,
+.composer-send-icon path,
+.tooltip {
+  transition: all var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.composer-tool-button:hover .composer-upload-icon path,
+.composer-tool-button:focus-visible .composer-upload-icon path {
+  stroke: #ffffff;
+}
+
+.composer-tool-button:hover .composer-upload-icon circle,
+.composer-tool-button:focus-visible .composer-upload-icon circle {
+  stroke: #ffffff;
+  fill: #3c3c3c;
+}
+
+.composer-tool-button:hover .tooltip,
+.composer-tool-button:focus-visible .tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
 }
 
 .composer-tool-button:disabled {
   opacity: 0.36;
+  cursor: not-allowed;
+}
+
+.tooltip {
+  position: absolute;
+  top: -2.5rem;
+  left: 50%;
+  visibility: hidden;
+  opacity: 0;
+  color: #ffffff;
+  font-size: 0.625rem;
+  line-height: 1;
+  white-space: nowrap;
+  background-color: #000000;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #3c3c3c;
+  border-radius: 0.4rem;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, 0.25rem);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.composer-message-input {
+  width: 100%;
+  min-height: 2.2rem;
+  max-height: 11.25rem;
+  flex: 1 1 auto;
+  resize: none;
+  background-color: transparent;
+  outline: none;
+  border: none;
+  padding: 0.32rem 0.45rem 0.28rem;
+  color: #ffffff;
+  line-height: 1.5rem;
+  overflow-y: auto;
+}
+
+.composer-message-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.messageBox:focus-within .composer-send-button:not(:disabled) .composer-send-icon path:first-child,
+.composer-send-button:hover:not(:disabled) .composer-send-icon path:first-child {
+  fill: #3c3c3c;
+}
+
+.messageBox:focus-within .composer-send-button:not(:disabled) .composer-send-icon path:last-child,
+.composer-send-button:hover:not(:disabled) .composer-send-icon path:last-child {
+  stroke: #ffffff;
 }
 
 .composer-send-button {
+  width: 2.2rem;
+  height: 2.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.45rem;
-  min-width: 2.75rem;
-  height: 2.75rem;
-  padding: 0 0.85rem;
   border-radius: 9999px;
-  background: linear-gradient(135deg, rgba(96, 165, 250, 0.92), rgba(59, 130, 246, 0.82));
-  color: #f8fbff;
-  box-shadow:
-    0 10px 28px rgba(37, 99, 235, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  cursor: pointer;
   transition:
-    transform var(--motion-duration-fast) var(--motion-ease-standard),
-    box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
-    opacity var(--motion-duration-fast) var(--motion-ease-standard),
-    filter var(--motion-duration-fast) var(--motion-ease-standard);
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.composer-send-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
 }
 
 .composer-send-button:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 14px 32px rgba(37, 99, 235, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  filter: saturate(1.04);
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .composer-send-button:disabled {
-  opacity: 0.58;
-  box-shadow: none;
-  filter: grayscale(0.12);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-send-button:disabled .composer-send-icon path {
+  stroke: #5e5e5e;
 }
 
 .input-ripple {
   position: absolute;
-  right: 1.4rem;
+  right: 1rem;
   bottom: 0;
   left: 50%;
   width: 0;
-  height: 2.5px;
+  height: 2px;
   border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.96), transparent);
+  background: linear-gradient(90deg, transparent, rgba(181, 181, 181, 0.85), transparent);
   transform: translateX(-50%);
   animation: ripple 0.6s ease-out forwards;
   pointer-events: none;
@@ -256,10 +379,10 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(96, 165, 250, 0.18);
-  border-radius: inherit;
-  background: rgba(5, 8, 14, 0.72);
-  color: rgba(191, 219, 254, 0.92);
+  border: 1px solid rgba(125, 125, 125, 0.45);
+  border-radius: 1rem;
+  background: rgba(12, 12, 12, 0.8);
+  color: rgba(226, 226, 226, 0.92);
   font-size: 0.75rem;
   letter-spacing: 0.24em;
   text-transform: uppercase;
@@ -272,9 +395,9 @@ textarea::placeholder {
   gap: 0.75rem;
   min-width: 0;
   padding: 0.55rem 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(77, 77, 77, 0.95);
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(38, 38, 38, 0.9);
 }
 
 .pending-upload-image,
@@ -290,14 +413,14 @@ textarea::placeholder {
 }
 
 .pending-upload-status {
-  color: rgba(161, 161, 170, 0.9);
+  color: rgba(181, 181, 181, 0.9);
   font-size: 0.73rem;
   line-height: 1rem;
 }
 
 .pending-upload-remove,
 .history-item-delete {
-  color: rgba(161, 161, 170, 0.9);
+  color: rgba(191, 191, 191, 0.88);
   font-size: 0.68rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -371,22 +494,12 @@ textarea::placeholder {
   color: #ffffff;
 }
 
-.thinking-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: rgba(167, 179, 204, 0.9);
-  font-size: 0.75rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-}
-
 .thinking-pulse {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 9999px;
-  background: rgba(96, 165, 250, 0.94);
-  box-shadow: 0 0 10px rgba(96, 165, 250, 0.22);
+  background: rgba(214, 214, 214, 0.94);
+  box-shadow: 0 0 10px rgba(214, 214, 214, 0.18);
   animation: thinkingPulse 1.3s ease-in-out infinite;
 }
 
@@ -413,6 +526,24 @@ textarea::placeholder {
 @media (max-width: 767px) {
   .history-item-delete {
     opacity: 1;
+  }
+
+  .messageBox {
+    padding: 0.32rem 0.45rem;
+  }
+
+  .composer-inline-status-row {
+    gap: 0.5rem;
+    padding-inline: 0.05rem;
+  }
+
+  .composer-inline-status {
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+  }
+
+  .composer-message-input {
+    padding-inline: 0.35rem;
   }
 
   .message-image {
@@ -462,8 +593,14 @@ textarea::placeholder {
   .desktop-composer,
   .composer-shell,
   .composer-shell::after,
+  .messageBox,
+  .composer-inline-stop,
   .composer-tool-button,
   .composer-send-button,
+  .composer-upload-icon path,
+  .composer-upload-icon circle,
+  .composer-send-icon path,
+  .tooltip,
   .pending-upload-remove,
   .history-item-delete,
   .composer-error-action,
@@ -478,5 +615,14 @@ textarea::placeholder {
   .assistant-cursor {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .messageBox:hover,
+  .messageBox.is-focused,
+  .messageBox:focus-within,
+  .messageBox:active,
+  .messageBox:has(textarea:active),
+  .messageBox:has(button:active) {
+    transform: none;
   }
 }

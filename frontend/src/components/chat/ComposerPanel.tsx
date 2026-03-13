@@ -1,5 +1,4 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowUp, Plus } from "lucide-react";
 import {
   MOTION_SPRING,
   MOTION_TRANSITION,
@@ -8,6 +7,42 @@ import {
   type MotionSource,
 } from "../../motion/tokens";
 import type { AppPhase, ComposerError, PendingUpload } from "../../features/chat/model";
+
+const AddImageIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 337 337"
+    className="composer-upload-icon"
+    aria-hidden="true"
+  >
+    <circle strokeWidth="20" stroke="#6c6c6c" fill="none" r="158.5" cy="168.5" cx="168.5" />
+    <path strokeLinecap="round" strokeWidth="25" stroke="#6c6c6c" d="M167.759 79V259" />
+    <path strokeLinecap="round" strokeWidth="25" stroke="#6c6c6c" d="M79 167.138H259" />
+  </svg>
+);
+
+const SendIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="none"
+    viewBox="0 0 664 663"
+    className="composer-send-icon"
+    aria-hidden="true"
+  >
+    <path
+      fill="none"
+      d="M646.293 331.888L17.7538 17.6187L155.245 331.888M646.293 331.888L17.753 646.157L155.245 331.888M646.293 331.888L318.735 330.228L155.245 331.888"
+    />
+    <path
+      strokeLinejoin="round"
+      strokeLinecap="round"
+      strokeWidth="33.67"
+      stroke="#6c6c6c"
+      d="M646.293 331.888L17.7538 17.6187L155.245 331.888M646.293 331.888L17.753 646.157L155.245 331.888M646.293 331.888L318.735 330.228L155.245 331.888"
+    />
+  </svg>
+);
 
 type ComposerPanelProps = {
   phase: AppPhase;
@@ -49,7 +84,6 @@ const ComposerPanel = ({
   pendingUploads,
   isInputFocused,
   dragActive,
-  inputRippleKey,
   isMobileSidebarOpen,
   motionSource,
   textareaRef,
@@ -111,50 +145,8 @@ const ComposerPanel = ({
             ) : null}
           </AnimatePresence>
 
-          <div className="mb-3 flex min-h-5 items-center justify-between gap-3">
-            <AnimatePresence initial={false} mode="popLayout">
-              {showThinkingState ? (
-                <motion.div
-                  key={phase}
-                  className="thinking-status"
-                  role="status"
-                  aria-live="polite"
-                  initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
-                  transition={presenceTransition}
-                >
-                  <span className="thinking-pulse" aria-hidden="true" />
-                  <span>{isStopping ? "Stopping..." : "Thinking..."}</span>
-                </motion.div>
-              ) : (
-                <div className="h-5" />
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence initial={false}>
-              {showThinkingState ? (
-                <motion.button
-                  key="stop"
-                  type="button"
-                  className="text-[11px] uppercase tracking-[0.28em] text-zinc-500 transition hover:text-zinc-100 disabled:opacity-40"
-                  onClick={onStop}
-                  disabled={isStopping}
-                  initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 8 }}
-                  transition={presenceTransition}
-                >
-                  Stop
-                </motion.button>
-              ) : null}
-            </AnimatePresence>
-          </div>
-
           <motion.div
-            className={`composer-shell relative rounded-[1.75rem] px-4 py-4 sm:px-5 ${
-              isInputFocused ? "is-focused" : ""
-            } ${dragActive ? "is-dragging" : ""}`}
+            className="composer-shell relative"
             layout={shellLayout}
             transition={shouldAnimateLayout(motionSource) ? MOTION_SPRING.panel : MOTION_TRANSITION.soft}
             onDragEnter={onDragEnter}
@@ -162,7 +154,6 @@ const ComposerPanel = ({
             onDragLeave={onDragLeave}
             onDrop={onDrop}
           >
-            {inputRippleKey > 0 ? <span key={inputRippleKey} className="input-ripple" aria-hidden="true" /> : null}
             <input
               ref={fileInputRef}
               type="file"
@@ -230,60 +221,90 @@ const ComposerPanel = ({
               ) : null}
             </AnimatePresence>
 
-            <div className="flex items-end gap-3">
-              <motion.button
-                type="button"
-                aria-label="Add image"
-                className="composer-tool-button shrink-0"
-                onClick={onOpenFilePicker}
-                disabled={isStopping}
-                whileTap={reduceMotion ? undefined : { scale: 0.94 }}
-              >
-                <Plus className="h-4 w-4" strokeWidth={1.8} />
-              </motion.button>
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={input}
-                placeholder="Message AI"
-                aria-label="Message AI"
-                enterKeyHint="send"
-                className="w-full resize-none bg-transparent py-1 text-[16px] leading-8 text-white outline-none placeholder:text-zinc-600 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={isStopping}
-                onChange={(event) => onTextareaChange(event.target.value)}
-                onFocus={onTextareaFocus}
-                onBlur={onTextareaBlur}
-                onKeyDown={onTextareaKeyDown}
-                onPaste={onTextareaPaste}
-              />
-              <motion.button
-                type="button"
-                aria-label={submitButtonLabel}
-                className="composer-send-button shrink-0"
-                onClick={onSubmit}
-                disabled={!canSubmit}
-                title={submitButtonTitle}
-                whileTap={reduceMotion || !canSubmit ? undefined : { scale: 0.97 }}
-              >
-                <ArrowUp className="h-4 w-4" strokeWidth={2.1} />
-                <span>{submitButtonLabel}</span>
-              </motion.button>
-            </div>
+            <div className="composer-message-region">
+              <div className={`messageBox ${isInputFocused ? "is-focused" : ""} ${dragActive ? "is-dragging" : ""}`}>
+                <AnimatePresence initial={false} mode="popLayout">
+                  {showThinkingState ? (
+                    <motion.div
+                      key="composer-status"
+                      className="composer-inline-status-row"
+                      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                      transition={presenceTransition}
+                    >
+                      <div className="composer-inline-status" role="status" aria-live="polite">
+                        <span className="thinking-pulse" aria-hidden="true" />
+                        <span>{isStopping ? "Stopping..." : "Thinking..."}</span>
+                      </div>
+                      <motion.button
+                        type="button"
+                        className="composer-inline-stop"
+                        onClick={onStop}
+                        disabled={isStopping}
+                      >
+                        Stop
+                      </motion.button>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
 
-            <AnimatePresence initial={false}>
-              {dragActive ? (
-                <motion.div
-                  key="composer-drop-indicator"
-                  className="composer-drop-indicator"
-                  initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.99 }}
-                  transition={presenceTransition}
-                >
-                  Drop image to attach
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
+                <div className="composer-input-row">
+                  <div className="fileUploadWrapper shrink-0">
+                    <motion.button
+                      type="button"
+                      aria-label="Add image"
+                      className="composer-tool-button"
+                      onClick={onOpenFilePicker}
+                      disabled={isStopping}
+                    >
+                      <AddImageIcon />
+                      <span className="tooltip">Add an image</span>
+                    </motion.button>
+                  </div>
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={input}
+                    placeholder="Message AI"
+                    aria-label="Message AI"
+                    enterKeyHint="send"
+                    className="composer-message-input"
+                    disabled={isStopping}
+                    onChange={(event) => onTextareaChange(event.target.value)}
+                    onFocus={onTextareaFocus}
+                    onBlur={onTextareaBlur}
+                    onKeyDown={onTextareaKeyDown}
+                    onPaste={onTextareaPaste}
+                  />
+                  <motion.button
+                    type="button"
+                    aria-label={submitButtonLabel}
+                    className="composer-send-button shrink-0"
+                    onClick={onSubmit}
+                    disabled={!canSubmit}
+                    title={submitButtonTitle}
+                  >
+                    <SendIcon />
+                  </motion.button>
+                </div>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {dragActive ? (
+                  <motion.div
+                    key="composer-drop-indicator"
+                    className="composer-drop-indicator"
+                    initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.985 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.99 }}
+                    transition={presenceTransition}
+                  >
+                    Drop image to attach
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </div>
           </motion.div>
         </div>
       </div>
