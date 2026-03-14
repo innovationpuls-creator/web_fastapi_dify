@@ -42,6 +42,7 @@ describe("streamSession", () => {
 
     const session = createStreamSession({
       currentConversationId: null,
+      provider: "openai",
       snapshotText: "Please review this image",
       snapshotUploads: [readyUpload, erroredUpload],
       previousDraftMessages: [],
@@ -57,5 +58,26 @@ describe("streamSession", () => {
       { type: "image", upload_id: "upload_ready" },
     ]);
     expect(session.runtime.snapshotUploads).toEqual([readyUpload, erroredUpload]);
+  });
+
+  it("omits uploads when building a dify session", () => {
+    const readyUpload = createUpload({
+      localId: "upload-ready",
+      uploadId: "upload_ready",
+    });
+
+    const session = createStreamSession({
+      currentConversationId: null,
+      provider: "dify",
+      snapshotText: "Just answer this",
+      snapshotUploads: [readyUpload],
+      previousDraftMessages: [],
+      previousConversation: null,
+    });
+
+    expect(session.readyUploads).toEqual([]);
+    expect(session.userMessage.parts).toEqual([{ type: "text", text: "Just answer this" }]);
+    expect(session.payload.provider).toBe("dify");
+    expect(session.payload.input.parts).toEqual([{ type: "text", text: "Just answer this" }]);
   });
 });

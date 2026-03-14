@@ -144,3 +144,13 @@ uv --directory backend run python -m unittest discover -s tests -v
 2. `app/chat/router.py`
 3. `app/chat/service.py`
 4. `app/chat/repository.py`
+
+## Dify Chatflow Notes
+
+- Add `DIFY_API_BASE_URL` and `DIFY_API_KEY` to the root `.env` to enable the Dify toggle.
+- This Dify app currently expects two required numeric inputs: `target_score_outline` and `target_score_draft`.
+- The backend auto-fills those values from `.env`, defaulting to `85` and `90`, so the frontend stays text-only.
+- Dify mode sends only the current text prompt upstream and does not include prior local conversation history.
+- Dify mode is text-only; image uploads stay on the normal OpenAI-compatible path.
+- Dify uses its own timeout settings: `DIFY_CONNECT_TIMEOUT_SECONDS`, `DIFY_READ_TIMEOUT_SECONDS`, and `DIFY_WRITE_TIMEOUT_SECONDS`.
+- When `DIFY_API_KEY` is missing, the frontend still shows the toggle but keeps it disabled.

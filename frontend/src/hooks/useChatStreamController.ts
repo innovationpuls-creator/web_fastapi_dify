@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import {
   cancelConversationMessage,
   editConversationMessageStream,
   regenerateConversationMessageStream,
   streamChat,
+  type ChatProvider,
 } from "../services/api";
 import {
   DEFAULT_GENERATION,
@@ -41,6 +42,7 @@ import type { ConversationController } from "./useConversationController";
 type StreamControllerOptions = {
   composer: ComposerController;
   conversation: ConversationController;
+  provider: ChatProvider;
 };
 
 const restartAssistantMessageLocally = (message: DisplayMessage): DisplayMessage => {
@@ -71,6 +73,7 @@ const rewriteUserMessageLocally = (message: DisplayMessage, text: string): Displ
 export const useChatStreamController = ({
   composer,
   conversation,
+  provider,
 }: StreamControllerOptions) => {
   const [phase, setPhase] = useState<AppPhase>("idle");
 
@@ -486,6 +489,14 @@ export const useChatStreamController = ({
 
     const trimmedInput = composer.input.trim();
     const snapshotUploads = composer.pendingUploadsRef.current.map(cloneUpload);
+    if (provider === "dify" && snapshotUploads.length > 0) {
+      composer.setMotionSource("user");
+      composer.setComposerError({
+        message: "Dify mode only supports text messages.",
+        retryable: false,
+      });
+      return;
+    }
     if (!hasSendableContent(trimmedInput, snapshotUploads)) {
       return;
     }
@@ -519,6 +530,7 @@ export const useChatStreamController = ({
     const { readyUploads, userMessage, assistantMessage, runtime, payload } =
       createStreamSession({
         currentConversationId,
+        provider,
         snapshotText: trimmedInput,
         snapshotUploads,
         previousDraftMessages,
@@ -720,6 +732,7 @@ export const useChatStreamController = ({
     patchRuntimeMeta,
     restoreOptimisticSnapshot,
     settleAssistantMessage,
+    provider,
   ]);
 
   const sendEditedMessage = useCallback(async (messageId: string) => {

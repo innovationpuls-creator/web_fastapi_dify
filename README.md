@@ -2,6 +2,13 @@
 
 一个以前后端解耦方式实现的会话式 AI 聊天项目：后端提供 FastAPI + SQLite + OpenAI-compatible 流式接口，前端提供 reading-first 的聊天体验、历史会话管理、图片上传和多端交互。
 
+## Dify Chatflow Notes
+
+- Set `DIFY_API_BASE_URL` and `DIFY_API_KEY` in the root `.env` to enable the Dify toggle.
+- This Dify app currently requires `target_score_outline` and `target_score_draft`; the backend auto-fills them from `.env` and defaults to `85` and `90`.
+- Dify mode remains text-only and sends only the current user question upstream, without local conversation history.
+- Dify uses dedicated timeout settings: `DIFY_CONNECT_TIMEOUT_SECONDS`, `DIFY_READ_TIMEOUT_SECONDS`, and `DIFY_WRITE_TIMEOUT_SECONDS`.
+
 ## 产品亮点
 
 - Reading-first 聊天界面：用户消息气泡更明确，AI 回复更像可阅读的正文内容。

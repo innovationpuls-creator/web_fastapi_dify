@@ -1,7 +1,8 @@
-import {
+﻿import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -21,18 +22,35 @@ import { resolveLastTurn } from "./features/chat/turnActions";
 import { useChatStreamController } from "./hooks/useChatStreamController";
 import { useComposerController } from "./hooks/useComposerController";
 import { useConversationController } from "./hooks/useConversationController";
-import { ApiError } from "./services/api";
+import { ApiError, type ChatProvider } from "./services/api";
+
+const CHAT_PROVIDER_STORAGE_KEY = "chat-provider-mode";
+
+const loadStoredChatProvider = (): ChatProvider => {
+  if (typeof window === "undefined") {
+    return "openai";
+  }
+  return window.localStorage.getItem(CHAT_PROVIDER_STORAGE_KEY) === "dify" ? "dify" : "openai";
+};
 
 function App() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const conversation = useConversationController();
   const composer = useComposerController();
+  const [chatProvider, setChatProvider] = useState<ChatProvider>(loadStoredChatProvider);
+  const isDifyAvailable = conversation.difyEnabled === true;
+  const effectiveProvider: ChatProvider =
+    chatProvider === "dify" && isDifyAvailable ? "dify" : "openai";
   const stream = useChatStreamController({
     composer,
     conversation,
+    provider: effectiveProvider,
   });
   const focusInput = composer.focusInput;
-  const hasSendableDraft = hasSendableContent(composer.input, composer.pendingUploads);
+  const hasSendableDraft =
+    effectiveProvider === "dify"
+      ? composer.input.trim().length > 0
+      : hasSendableContent(composer.input, composer.pendingUploads);
   const canSubmit =
     !stream.isBusy &&
     !composer.hasUploadingUploads &&
@@ -56,8 +74,12 @@ function App() {
       : composer.hasErroredUploads
         ? "Retry or remove failed images before sending."
         : hasSendableDraft
-          ? "Send message"
-          : "Type a message or attach an image to send.";
+          ? effectiveProvider === "dify"
+            ? "Send message to Dify."
+            : "Send message"
+          : effectiveProvider === "dify"
+            ? "Type a message to send to Dify."
+            : "Type a message or attach an image to send.";
 
   const shellStyle = useMemo(
     () =>
@@ -70,6 +92,28 @@ function App() {
   useEffect(() => {
     focusInput();
   }, [conversation.activeConversationId, focusInput]);
+
+  useEffect(() => {
+    if (chatProvider === "dify" && conversation.difyEnabled === false) {
+      setChatProvider("openai");
+    }
+  }, [chatProvider, conversation.difyEnabled]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CHAT_PROVIDER_STORAGE_KEY, chatProvider);
+  }, [chatProvider]);
+
+  useEffect(() => {
+    if (effectiveProvider !== "dify" || composer.pendingUploads.length === 0) {
+      return;
+    }
+    composer.clearPendingUploads({ deleteRemoteUploads: true });
+    composer.clearComposerError();
+  }, [
+    composer,
+    composer.pendingUploads.length,
+    effectiveProvider,
+  ]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -274,6 +318,10 @@ function App() {
 
         <ComposerPanel
           phase={stream.phase}
+          provider={effectiveProvider}
+          difyEnabled={isDifyAvailable}
+          isProviderToggleDisabled={stream.isBusy}
+          uploadDisabled={effectiveProvider === "dify"}
           composerError={composer.composerError}
           input={composer.input}
           pendingUploads={composer.pendingUploads}
@@ -288,8 +336,15 @@ function App() {
           onRetryComposerError={stream.handleRetry}
           onStop={() => void stream.handleStop()}
           onCancelEdit={composer.cancelEdit}
-          onOpenFilePicker={composer.openFilePicker}
-          onFileChange={(event) => composer.handleFileChange(event, { isBusy: stream.isBusy })}
+          onOpenFilePicker={() =>
+            composer.openFilePicker({ uploadsDisabled: effectiveProvider === "dify" })
+          }
+          onFileChange={(event) =>
+            composer.handleFileChange(event, {
+              isBusy: stream.isBusy,
+              uploadsDisabled: effectiveProvider === "dify",
+            })
+          }
           onTextareaChange={composer.handleInputChange}
           onTextareaFocus={() => {
             composer.setIsInputFocused(true);
@@ -297,16 +352,37 @@ function App() {
           }}
           onTextareaBlur={() => composer.setIsInputFocused(false)}
           onTextareaKeyDown={handleTextareaKeyDown}
-          onTextareaPaste={(event) => composer.handleComposerPaste(event, { isBusy: stream.isBusy })}
+          onTextareaPaste={(event) =>
+            composer.handleComposerPaste(event, {
+              isBusy: stream.isBusy,
+              uploadsDisabled: effectiveProvider === "dify",
+            })
+          }
           onRemoveUpload={(localId) => void composer.removeUpload(localId)}
           onRetryUpload={composer.retryUpload}
-          onDragEnter={(event) => composer.handleDragEnter(event, { isBusy: stream.isBusy })}
-          onDragOver={(event) => composer.handleDragOver(event, { isBusy: stream.isBusy })}
+          onDragEnter={(event) =>
+            composer.handleDragEnter(event, {
+              isBusy: stream.isBusy,
+              uploadsDisabled: effectiveProvider === "dify",
+            })
+          }
+          onDragOver={(event) =>
+            composer.handleDragOver(event, {
+              isBusy: stream.isBusy,
+              uploadsDisabled: effectiveProvider === "dify",
+            })
+          }
           onDragLeave={composer.handleDragLeave}
-          onDrop={(event) => composer.handleDrop(event, { isBusy: stream.isBusy })}
+          onDrop={(event) =>
+            composer.handleDrop(event, {
+              isBusy: stream.isBusy,
+              uploadsDisabled: effectiveProvider === "dify",
+            })
+          }
           canSubmit={canSubmit}
           submitButtonLabel={submitButtonLabel}
           submitButtonTitle={submitButtonTitle}
+          onProviderChange={setChatProvider}
           onSubmit={handleSubmit}
         />
       </LayoutGroup>

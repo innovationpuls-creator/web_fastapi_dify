@@ -5,6 +5,7 @@ const healthPayload = {
   app_name: "dify-fastapi",
   version: "1.0.0",
   config_loaded: true,
+  dify_enabled: false,
 };
 
 const timestamp = "2026-03-07T12:00:00.000Z";
@@ -25,10 +26,12 @@ type Detail = Summary & {
 async function mockBootstrap(
   page: Page,
   options?: {
+    health?: typeof healthPayload;
     conversations?: Summary[];
     details?: Record<string, Detail>;
   },
 ) {
+  const health = options?.health ?? healthPayload;
   const conversations = options?.conversations ?? [];
   const details = options?.details ?? {};
 
@@ -36,7 +39,7 @@ async function mockBootstrap(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(healthPayload),
+      body: JSON.stringify(health),
     });
   });
 
@@ -470,4 +473,29 @@ test("latest turn supports edit and regenerate flows", async ({ page }) => {
   await page.getByRole("button", { name: "Regenerate response" }).click();
   await expect(page.getByText("Here is a regenerated version.")).toBeVisible();
   await expect(page.getByText("Latency: 1.1s")).toBeVisible();
+});
+
+test("dify toggle is visible but disabled when the backend is not configured", async ({ page }) => {
+  await mockBootstrap(page, {
+    health: { ...healthPayload, dify_enabled: false },
+  });
+  await page.goto("/");
+
+  const toggle = page.getByRole("checkbox", { name: "Toggle Dify mode" });
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toBeDisabled();
+  await expect(page.getByText("未配置")).toBeVisible();
+});
+
+test("dify toggle restores the saved mode when available", async ({ page }) => {
+  await mockBootstrap(page, {
+    health: { ...healthPayload, dify_enabled: true },
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("chat-provider-mode", "dify");
+  });
+  await page.goto("/");
+
+  await expect(page.getByRole("checkbox", { name: "Toggle Dify mode" })).toBeChecked();
+  await expect(page.getByText("Text only")).toBeVisible();
 });

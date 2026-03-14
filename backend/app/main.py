@@ -9,6 +9,7 @@ from backend.app.chat.cancellation import ChatCancellationRegistry
 from backend.app.chat.api.router import router as chat_router
 from backend.app.chat.infrastructure.persistence import ChatRepository
 from backend.app.core.container import AppContainer, set_app_container
+from backend.app.core.dify_client import create_dify_gateway
 from backend.app.core.logging import configure_logging
 from backend.app.core.openai_client import create_openai_gateway
 from backend.app.core.settings import AppSettings, get_settings
@@ -28,6 +29,7 @@ def build_app_container(settings: AppSettings) -> AppContainer:
         ),
         chat_cancellation_registry=ChatCancellationRegistry(),
         openai_gateway=create_openai_gateway(settings),
+        dify_gateway=create_dify_gateway(settings),
     )
 
 

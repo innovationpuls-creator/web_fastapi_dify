@@ -11,9 +11,9 @@ from fastapi.testclient import TestClient
 from backend.app.chat.cancellation import ChatCancellationRegistry
 from backend.app.chat.infrastructure.persistence import ChatRepository, NewMessagePart
 from backend.app.core.container import AppContainer
+from backend.app.core.dify_client import DifyGateway
 from backend.app.core.openai_client import OpenAIGateway
 from backend.app.core.settings import get_settings
-from backend.app.main import create_app
 
 
 class FakeGateway(OpenAIGateway):
@@ -40,6 +40,7 @@ class ChatApiTests(unittest.TestCase):
                 "OPENAI_API_KEY": "test-key",
                 "OPENAI_BASE_URL": "http://127.0.0.1:1234/v1",
                 "OPENAI_MODEL": "test-model",
+                "DIFY_API_KEY": "",
                 "CHAT_DATABASE_PATH": str(self.base_path / "chat.sqlite3"),
                 "CHAT_ASSETS_DIR": str(self.base_path / "chat-assets"),
                 "CHAT_UPLOADS_DIR": str(self.base_path / "chat-uploads"),
@@ -60,12 +61,15 @@ class ChatApiTests(unittest.TestCase):
         shutil.rmtree(self.base_path, ignore_errors=True)
 
     def _create_client(self) -> TestClient:
+        from backend.app.main import create_app
+
         def container_factory(settings) -> AppContainer:
             return AppContainer(
                 settings=settings,
                 chat_repository=self.repository,
                 chat_cancellation_registry=self.registry,
                 openai_gateway=FakeGateway(),
+                dify_gateway=DifyGateway(client=None),
             )
 
         return TestClient(create_app(container_factory=container_factory))
@@ -199,3 +203,12 @@ class ChatApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["message"]["status"], "cancelled")
         self.assertEqual(payload["conversation"]["id"], conversation.id)
+
+    def test_health_exposes_dify_enabled_flag(self) -> None:
+        with self._create_client() as client:
+            response = client.get("/health")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("dify_enabled", payload)
+        self.assertFalse(payload["dify_enabled"])

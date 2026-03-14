@@ -28,6 +28,7 @@ class PreparedInput:
 @dataclass
 class PreparedChatStream:
     stream: Any
+    provider: str
     start_time: float
     message_count: int
     model: str

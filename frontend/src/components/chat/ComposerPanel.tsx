@@ -1,4 +1,4 @@
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+﻿import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   MOTION_SPRING,
   MOTION_TRANSITION,
@@ -7,6 +7,7 @@ import {
   type MotionSource,
 } from "../../motion/tokens";
 import type { AppPhase, ComposerError, PendingUpload } from "../../features/chat/model";
+import type { ChatProvider } from "../../services/api";
 
 const AddImageIcon = () => (
   <svg
@@ -46,6 +47,10 @@ const SendIcon = () => (
 
 type ComposerPanelProps = {
   phase: AppPhase;
+  provider: ChatProvider;
+  difyEnabled: boolean;
+  isProviderToggleDisabled: boolean;
+  uploadDisabled: boolean;
   composerError: ComposerError | null;
   input: string;
   pendingUploads: PendingUpload[];
@@ -76,11 +81,16 @@ type ComposerPanelProps = {
   canSubmit: boolean;
   submitButtonLabel: string;
   submitButtonTitle: string;
+  onProviderChange: (provider: ChatProvider) => void;
   onSubmit: () => void;
 };
 
 const ComposerPanel = ({
   phase,
+  provider,
+  difyEnabled,
+  isProviderToggleDisabled,
+  uploadDisabled,
   composerError,
   input,
   pendingUploads,
@@ -110,6 +120,7 @@ const ComposerPanel = ({
   canSubmit,
   submitButtonLabel,
   submitButtonTitle,
+  onProviderChange,
   onSubmit,
 }: ComposerPanelProps) => {
   const reduceMotion = useReducedMotion();
@@ -282,13 +293,48 @@ const ComposerPanel = ({
                       aria-label="Add image"
                       className="composer-tool-button"
                       onClick={onOpenFilePicker}
-                      disabled={isStopping || isEditingMessage}
+                      disabled={isStopping || isEditingMessage || uploadDisabled}
                     >
                       <AddImageIcon />
                       <span className="tooltip">
-                        {isEditingMessage ? "Images disabled while editing" : "Add an image"}
+                        {isEditingMessage
+                          ? "Images disabled while editing"
+                          : uploadDisabled
+                            ? "Dify mode only supports text questions."
+                            : "Add an image"}
                       </span>
                     </motion.button>
+                  </div>
+                  <div
+                    className="composer-provider-control shrink-0"
+                    title={
+                      !difyEnabled
+                        ? "Dify Chatflow is not configured."
+                        : isProviderToggleDisabled
+                          ? "Wait for the current response to finish."
+                          : "Toggle Dify mode"
+                    }
+                  >
+                    <span className="composer-provider-caption">Dify</span>
+                    <div className="checkbox-apple">
+                      <input
+                        className="yep"
+                        id="composer-dify-toggle"
+                        type="checkbox"
+                        aria-label="Toggle Dify mode"
+                        checked={provider === "dify"}
+                        disabled={!difyEnabled || isProviderToggleDisabled}
+                        onChange={(event) =>
+                          onProviderChange(event.target.checked ? "dify" : "openai")
+                        }
+                      />
+                      <label htmlFor="composer-dify-toggle" />
+                    </div>
+                    {!difyEnabled ? (
+                      <span className="composer-provider-hint">未配置</span>
+                    ) : provider === "dify" ? (
+                      <span className="composer-provider-hint">Text only</span>
+                    ) : null}
                   </div>
                   <textarea
                     ref={textareaRef}

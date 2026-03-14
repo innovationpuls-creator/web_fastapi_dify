@@ -1,4 +1,4 @@
-import type { ChatStreamRequest } from "../../services/api";
+import type { ChatProvider, ChatStreamRequest } from "../../services/api";
 import {
   DEFAULT_GENERATION,
   createLocalId,
@@ -13,6 +13,7 @@ import {
 
 type CreateStreamSessionOptions = {
   currentConversationId: string | null;
+  provider: ChatProvider;
   snapshotText: string;
   snapshotUploads: PendingUpload[];
   previousDraftMessages: DisplayMessage[];
@@ -29,12 +30,13 @@ export type StreamSession = {
 
 export const createStreamSession = ({
   currentConversationId,
+  provider,
   snapshotText,
   snapshotUploads,
   previousDraftMessages,
   previousConversation,
 }: CreateStreamSessionOptions): StreamSession => {
-  const readyUploads = snapshotUploads.filter(isReadyUpload);
+  const readyUploads = provider === "dify" ? [] : snapshotUploads.filter(isReadyUpload);
   const createdAt = nowIso();
   const userClientKey = createLocalId("user");
   const assistantClientKey = createLocalId("assistant");
@@ -96,6 +98,7 @@ export const createStreamSession = ({
 
   const payload: ChatStreamRequest = {
     ...(currentConversationId ? { conversation_id: currentConversationId } : {}),
+    provider,
     input: {
       parts: [
         ...(snapshotText ? [{ type: "text", text: snapshotText } as const] : []),

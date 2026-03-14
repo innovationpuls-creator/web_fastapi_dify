@@ -7,6 +7,7 @@ import unittest
 from backend.app.chat.cancellation import ChatCancellationRegistry
 from backend.app.chat.infrastructure.persistence import ChatRepository
 from backend.app.core.container import AppContainer
+from backend.app.core.dify_client import DifyGateway
 from backend.app.core.settings import AppSettings
 
 
@@ -66,6 +67,7 @@ class AppContainerTests(unittest.IsolatedAsyncioTestCase):
             chat_repository=self.repository,
             chat_cancellation_registry=ChatCancellationRegistry(),
             openai_gateway=_DummyGateway(),
+            dify_gateway=DifyGateway(client=None),
         )
 
         await container.initialize()

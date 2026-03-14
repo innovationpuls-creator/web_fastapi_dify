@@ -56,6 +56,7 @@ class ChatStreamRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "conversation_id": None,
+                "provider": "openai",
                 "input": {
                     "parts": [
                         {"type": "text", "text": "Please analyze this image."},
@@ -74,6 +75,7 @@ class ChatStreamRequest(BaseModel):
     )
 
     conversation_id: str | None = Field(default=None, min_length=8, max_length=64)
+    provider: Literal["openai", "dify"] = "openai"
     input: ChatInput
     generation: GenerationOptions = Field(default_factory=GenerationOptions)
 

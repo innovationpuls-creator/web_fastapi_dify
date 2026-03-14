@@ -3,6 +3,7 @@ from fastapi import Depends, Request
 from backend.app.chat.cancellation import ChatCancellationRegistry
 from backend.app.chat.infrastructure.persistence import ChatRepository
 from backend.app.core.container import AppContainer, get_app_container
+from backend.app.core.dify_client import DifyGateway
 from backend.app.core.openai_client import OpenAIGateway
 from backend.app.core.request_context import request_id
 from backend.app.core.settings import AppSettings
@@ -32,6 +33,12 @@ def get_openai_gateway(
     container: AppContainer = Depends(get_container),
 ) -> OpenAIGateway:
     return container.openai_gateway
+
+
+def get_dify_gateway(
+    container: AppContainer = Depends(get_container),
+) -> DifyGateway:
+    return container.dify_gateway
 
 
 def get_request_id_value(request: Request) -> str:

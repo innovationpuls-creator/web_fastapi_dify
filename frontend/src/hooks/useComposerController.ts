@@ -130,6 +130,18 @@ export const useComposerController = () => {
     [releaseUploads],
   );
 
+  const clearPendingUploads = useCallback(
+    (options?: { deleteRemoteUploads?: boolean }) => {
+      releaseUploads(pendingUploadsRef.current, {
+        deleteRemote: options?.deleteRemoteUploads ?? false,
+      });
+      setPendingUploads([]);
+      setDragActive(false);
+      dragDepthRef.current = 0;
+    },
+    [releaseUploads],
+  );
+
   const restoreComposerSnapshot = useCallback((nextInput: string, uploads: PendingUpload[]) => {
     setMotionSource("system");
     setEditingMessageId(null);
@@ -267,13 +279,23 @@ export const useComposerController = () => {
     [],
   );
 
-  const openFilePicker = useCallback(() => {
+  const openFilePicker = useCallback((options?: { uploadsDisabled?: boolean }) => {
+    if (options?.uploadsDisabled) {
+      return;
+    }
     setMotionSource("user");
     fileInputRef.current?.click();
   }, []);
 
   const handleFileChange = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>, options?: { isBusy?: boolean }) => {
+    (
+      event: React.ChangeEvent<HTMLInputElement>,
+      options?: { isBusy?: boolean; uploadsDisabled?: boolean },
+    ) => {
+      if (options?.uploadsDisabled) {
+        event.target.value = "";
+        return;
+      }
       const files = Array.from(event.target.files || []);
       addFiles(files, options);
       event.target.value = "";
@@ -282,25 +304,37 @@ export const useComposerController = () => {
   );
 
   const handleComposerPaste = useCallback(
-    (event: React.ClipboardEvent<HTMLTextAreaElement>, options?: { isBusy?: boolean }) => {
+    (
+      event: React.ClipboardEvent<HTMLTextAreaElement>,
+      options?: { isBusy?: boolean; uploadsDisabled?: boolean },
+    ) => {
       const files = Array.from(event.clipboardData.files || []);
       if (files.length === 0) {
         return;
       }
 
       event.preventDefault();
+      if (options?.uploadsDisabled) {
+        return;
+      }
       addFiles(files, options);
     },
     [addFiles],
   );
 
   const handleDragEnter = useCallback(
-    (event: React.DragEvent<HTMLDivElement>, options?: { isBusy?: boolean }) => {
-      if (options?.isBusy || !Array.from(event.dataTransfer.types).includes("Files")) {
+    (
+      event: React.DragEvent<HTMLDivElement>,
+      options?: { isBusy?: boolean; uploadsDisabled?: boolean },
+    ) => {
+      if (!Array.from(event.dataTransfer.types).includes("Files")) {
         return;
       }
 
       event.preventDefault();
+      if (options?.isBusy || options?.uploadsDisabled) {
+        return;
+      }
       dragDepthRef.current += 1;
       setMotionSource("user");
       setDragActive(true);
@@ -309,12 +343,18 @@ export const useComposerController = () => {
   );
 
   const handleDragOver = useCallback(
-    (event: React.DragEvent<HTMLDivElement>, options?: { isBusy?: boolean }) => {
-      if (options?.isBusy || !Array.from(event.dataTransfer.types).includes("Files")) {
+    (
+      event: React.DragEvent<HTMLDivElement>,
+      options?: { isBusy?: boolean; uploadsDisabled?: boolean },
+    ) => {
+      if (!Array.from(event.dataTransfer.types).includes("Files")) {
         return;
       }
 
       event.preventDefault();
+      if (options?.isBusy || options?.uploadsDisabled) {
+        return;
+      }
       event.dataTransfer.dropEffect = "copy";
     },
     [],
@@ -334,8 +374,11 @@ export const useComposerController = () => {
   }, []);
 
   const handleDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>, options?: { isBusy?: boolean }) => {
-      if (options?.isBusy || !Array.from(event.dataTransfer.types).includes("Files")) {
+    (
+      event: React.DragEvent<HTMLDivElement>,
+      options?: { isBusy?: boolean; uploadsDisabled?: boolean },
+    ) => {
+      if (!Array.from(event.dataTransfer.types).includes("Files")) {
         return;
       }
 
@@ -343,6 +386,9 @@ export const useComposerController = () => {
       dragDepthRef.current = 0;
       setMotionSource("user");
       setDragActive(false);
+      if (options?.isBusy || options?.uploadsDisabled) {
+        return;
+      }
       addFiles(Array.from(event.dataTransfer.files || []), options);
     },
     [addFiles],
@@ -377,6 +423,7 @@ export const useComposerController = () => {
     restoreEditState,
     handleInputChange,
     resetComposer,
+    clearPendingUploads,
     restoreComposerSnapshot,
     releaseUploads,
     addFiles,

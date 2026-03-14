@@ -9,6 +9,7 @@ export type HealthResponse = {
   app_name: string;
   version: string;
   config_loaded: boolean;
+  dify_enabled: boolean;
 };
 
 export type DeepHealthResponse = {
@@ -24,6 +25,8 @@ export type GenerationOptions = {
   max_output_tokens: number | null;
 };
 
+export type ChatProvider = "openai" | "dify";
+
 export type TextInputPart = {
   type: "text";
   text: string;
@@ -38,6 +41,7 @@ export type ChatInputPart = TextInputPart | ImageInputPart;
 
 export type ChatStreamRequest = {
   conversation_id?: string | null;
+  provider: ChatProvider;
   input: {
     parts: ChatInputPart[];
   };

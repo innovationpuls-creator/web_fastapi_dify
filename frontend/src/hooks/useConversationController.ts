@@ -31,6 +31,7 @@ import type { MotionSource } from "../motion/tokens";
 type PatchMessageUpdater = (messages: DisplayMessage[]) => DisplayMessage[];
 
 export const useConversationController = () => {
+  const [difyEnabled, setDifyEnabled] = useState<boolean | null>(null);
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationDetails, setConversationDetails] = useState<Record<string, DisplayConversation>>(
     {},
@@ -348,10 +349,11 @@ export const useConversationController = () => {
 
     const bootstrap = async () => {
       try {
-        await getHealth();
+        const health = await getHealth();
         if (cancelled) {
           return;
         }
+        setDifyEnabled(Boolean(health.dify_enabled));
 
         setHistoryMotionSource("system");
         const items = await listConversations();
@@ -375,6 +377,7 @@ export const useConversationController = () => {
         if (cancelled) {
           return;
         }
+        setDifyEnabled(false);
 
         setScreenError({
           message:
@@ -398,6 +401,7 @@ export const useConversationController = () => {
     conversations,
     conversationDetails,
     draftMessages,
+    difyEnabled,
     activeConversation,
     activeConversationId,
     activeConversationIdRef,

@@ -239,6 +239,93 @@ textarea::placeholder {
   width: 100%;
 }
 
+.composer-provider-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding-bottom: 0.1rem;
+}
+
+.composer-provider-caption,
+.composer-provider-hint {
+  font-size: 0.58rem;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.composer-provider-caption {
+  color: rgba(212, 212, 216, 0.82);
+}
+
+.composer-provider-hint {
+  color: rgba(161, 161, 170, 0.72);
+}
+
+.checkbox-apple {
+  position: relative;
+  width: 2.9rem;
+  height: 1.5rem;
+  user-select: none;
+}
+
+.checkbox-apple label {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: linear-gradient(to bottom, #4c4c51, #2f2f34);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.checkbox-apple label::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.checkbox-apple .yep {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.checkbox-apple .yep:checked + label {
+  background: linear-gradient(to bottom, #4cd964, #35b84f);
+}
+
+.checkbox-apple .yep:checked + label::after {
+  transform: translateX(1.4rem);
+}
+
+.checkbox-apple .yep:focus-visible + label {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.checkbox-apple .yep:disabled,
+.checkbox-apple .yep:disabled + label {
+  cursor: not-allowed;
+}
+
+.checkbox-apple .yep:disabled + label {
+  opacity: 0.5;
+}
+
 .fileUploadWrapper {
   width: fit-content;
   height: 100%;
@@ -743,6 +830,15 @@ textarea::placeholder {
   .composer-inline-status {
     font-size: 0.68rem;
     letter-spacing: 0.14em;
+  }
+
+  .composer-provider-control {
+    gap: 0.12rem;
+  }
+
+  .composer-provider-caption,
+  .composer-provider-hint {
+    letter-spacing: 0.12em;
   }
 
   .composer-message-input {

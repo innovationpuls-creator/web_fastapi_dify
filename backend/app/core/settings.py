@@ -38,10 +38,17 @@ class AppSettings(BaseSettings):
     openai_base_url: str = Field(min_length=1)
     openai_model: str = Field(min_length=1)
     openai_system_prompt: str = Field(default=DEFAULT_OPENAI_SYSTEM_PROMPT, min_length=1)
+    dify_api_base_url: str = Field(default="https://api.dify.ai/v1", min_length=1)
+    dify_api_key: str | None = Field(default=None, min_length=1)
+    dify_target_score_outline: int = Field(default=85)
+    dify_target_score_draft: int = Field(default=90)
 
     openai_connect_timeout_seconds: float = Field(default=5.0, gt=0)
     openai_read_timeout_seconds: float = Field(default=60.0, gt=0)
     openai_write_timeout_seconds: float = Field(default=10.0, gt=0)
+    dify_connect_timeout_seconds: float = Field(default=5.0, gt=0)
+    dify_read_timeout_seconds: float = Field(default=180.0, gt=0)
+    dify_write_timeout_seconds: float = Field(default=10.0, gt=0)
     health_deep_timeout_seconds: float = Field(default=5.0, gt=0)
     cors_allow_origins: list[str] = Field(
         default_factory=lambda: [
@@ -70,6 +77,24 @@ class AppSettings(BaseSettings):
                 "http://localhost:4173",
             ]
         return value
+
+    @field_validator("dify_api_key", mode="before")
+    @classmethod
+    def empty_dify_api_key_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @property
+    def dify_enabled(self) -> bool:
+        return bool(self.dify_api_key)
+
+    @property
+    def dify_default_inputs(self) -> dict[str, int]:
+        return {
+            "target_score_outline": self.dify_target_score_outline,
+            "target_score_draft": self.dify_target_score_draft,
+        }
 
 
 @lru_cache

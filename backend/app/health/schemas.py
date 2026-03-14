@@ -21,6 +21,9 @@ class HealthResponse(BaseModel):
     config_loaded: bool = Field(
         description="True when typed settings loaded successfully at startup."
     )
+    dify_enabled: bool = Field(
+        description="True when Dify Chatflow credentials are configured."
+    )
 
 
 class DeepHealthResponse(BaseModel):

@@ -26,6 +26,7 @@ class HealthService:
             app_name=self.settings.app_name,
             version=self.settings.app_version,
             config_loaded=True,
+            dify_enabled=self.settings.dify_enabled,
         )
 
     async def get_deep_health(self, request: Request) -> tuple[DeepHealthResponse, int]:

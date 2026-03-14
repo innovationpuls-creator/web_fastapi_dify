@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
@@ -7,6 +7,8 @@ from pathlib import Path
 import shutil
 from types import SimpleNamespace
 import unittest
+
+import httpx
 
 from backend.app.chat.application.conversations import ConversationService
 from backend.app.chat.application.message_state import persist_cancelled_message
@@ -17,6 +19,10 @@ from backend.app.chat.application.streaming import (
 )
 from backend.app.chat.cancellation import ChatCancellationRegistry
 from backend.app.chat.domain.errors import ChatPreStreamError
+from backend.app.chat.domain.constants import (
+    PUBLIC_DIFY_PARAMETERS_ERROR,
+    PUBLIC_DIFY_TIMEOUT_ERROR,
+)
 from backend.app.chat.domain.text import utc_now
 from backend.app.chat.infrastructure.persistence import (
     ChatRepository,
@@ -84,6 +90,99 @@ class FakeGateway:
         return None
 
 
+class FakeDifyResponse:
+    def __init__(self, items: list[tuple[float, str]]) -> None:
+        self.items = items
+        self.index = 0
+        self.closed = False
+
+    async def aiter_lines(self):
+        while not self.closed and self.index < len(self.items):
+            delay, item = self.items[self.index]
+            self.index += 1
+            if delay:
+                await asyncio.sleep(delay)
+            if self.closed:
+                return
+            yield item
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class FailingDifyResponse:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+        self.closed = False
+
+    async def aiter_lines(self):
+        if False:
+            yield ""
+        raise self.exc
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _default_dify_parameters_payload() -> dict[str, object]:
+    return {
+        "user_input_form": [
+            {
+                "number": {
+                    "variable": "target_score_outline",
+                    "required": True,
+                    "default": "85",
+                }
+            },
+            {
+                "number": {
+                    "variable": "target_score_draft",
+                    "required": True,
+                    "default": "90",
+                }
+            },
+        ]
+    }
+
+
+class FakeDifyGateway:
+    def __init__(
+        self,
+        response: FakeDifyResponse | FailingDifyResponse | None = None,
+        *,
+        parameters_payload: dict[str, object] | None = None,
+    ) -> None:
+        self.response = response or FakeDifyResponse([])
+        self.parameters_payload = parameters_payload or _default_dify_parameters_payload()
+        self.parameters_calls = 0
+        self.last_query: str | None = None
+        self.last_user: str | None = None
+        self.last_inputs: dict[str, object] | None = None
+        self.stop_calls: list[tuple[str, str]] = []
+
+    async def get_parameters(self) -> dict[str, object]:
+        self.parameters_calls += 1
+        return dict(self.parameters_payload)
+
+    async def create_chat_stream(
+        self,
+        *,
+        query: str,
+        user: str,
+        inputs: dict[str, object],
+    ) -> FakeDifyResponse | FailingDifyResponse:
+        self.last_query = query
+        self.last_user = user
+        self.last_inputs = dict(inputs)
+        return self.response
+
+    async def stop_chat_message(self, *, task_id: str, user: str) -> None:
+        self.stop_calls.append((task_id, user))
+
+    async def close(self) -> None:
+        return None
+
+
 class FakeRequest:
     def __init__(self, *, path: str = "/chat/stream") -> None:
         self.state = SimpleNamespace(request_id="test-request")
@@ -117,6 +216,10 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
             chat_max_images_per_message=4,
             chat_max_image_bytes=5_000_000,
             chat_upload_ttl_seconds=3600,
+            dify_default_inputs={
+                "target_score_outline": 85,
+                "target_score_draft": 90,
+            },
         )
 
     async def asyncTearDown(self) -> None:
@@ -203,11 +306,16 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         return conversation, SimpleNamespace(user=user_message, assistant=assistant_message)
 
-    def _create_stream_service(self, stream: FakeStream | None = None) -> ChatStreamService:
+    def _create_stream_service(
+        self,
+        stream: FakeStream | None = None,
+        dify_gateway: FakeDifyGateway | None = None,
+    ) -> ChatStreamService:
         return ChatStreamService(
             repository=self.repository,
             cancellation_registry=self.registry,
             openai_gateway=FakeGateway(stream or FakeStream([])),
+            dify_gateway=dify_gateway or FakeDifyGateway(),
             settings=self.settings,
         )
 
@@ -224,6 +332,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         prepared = PreparedChatStream(
             stream=stream,
+            provider="openai",
             start_time=0.0,
             message_count=1,
             model="test-model",
@@ -333,6 +442,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         prepared = PreparedChatStream(
             stream=stream,
+            provider="openai",
             start_time=0.0,
             message_count=1,
             model="test-model",
@@ -372,6 +482,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         prepared = PreparedChatStream(
             stream=stream,
+            provider="openai",
             start_time=0.0,
             message_count=1,
             model="test-model",
@@ -409,6 +520,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                     (0.0, FakeChunk(finish_reason="length")),
                 ]
             ),
+            provider="openai",
             start_time=0.0,
             message_count=1,
             model="test-model",
@@ -453,6 +565,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                     ),
                 ]
             ),
+            provider="openai",
             start_time=0.0,
             message_count=1,
             model="test-model",
@@ -493,6 +606,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                     (0.0, FakeChunk(finish_reason="stop")),
                 ]
             ),
+            provider="openai",
             start_time=0.0,
             message_count=1,
             model="test-model",
@@ -532,6 +646,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
                     (0.5, FakeChunk(delta=" more")),
                 ]
             ),
+            provider="openai",
             start_time=0.0,
             message_count=1,
             model="test-model",
@@ -604,6 +719,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
             repository=self.repository,
             cancellation_registry=self.registry,
             openai_gateway=gateway,
+            dify_gateway=FakeDifyGateway(),
             settings=self.settings,
         )
 
@@ -622,7 +738,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
             {
                 "input": {
                     "parts": [
-                        {"type": "text", "text": "你好"},
+                        {"type": "text", "text": "浣犲ソ"},
                     ]
                 }
             }
@@ -632,6 +748,7 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
             repository=self.repository,
             cancellation_registry=self.registry,
             openai_gateway=gateway,
+            dify_gateway=FakeDifyGateway(),
             settings=self.settings,
         )
 
@@ -642,8 +759,221 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(messages[0]["role"], "system")
         self.assertEqual(messages[0]["content"], self.settings.openai_system_prompt)
         self.assertEqual(messages[1]["role"], "user")
-        self.assertEqual(messages[1]["content"], "你好")
+        self.assertEqual(messages[1]["content"], "浣犲ソ")
         await prepared.stream.close()
+
+    async def test_prepare_dify_chat_stream_uses_only_current_text(self) -> None:
+        conversation = await self.repository.create_conversation(
+            title="Existing conversation",
+            created_at="2026-03-07T00:00:00+00:00",
+        )
+        await self.repository.create_message(
+            conversation_id=conversation.id,
+            role="user",
+            status="completed",
+            preview_text="old prompt",
+            text_content="old prompt",
+            parts=[NewMessagePart(type="text", text="old prompt")],
+            created_at="2026-03-07T00:00:01+00:00",
+        )
+        dify_gateway = FakeDifyGateway()
+        stream_service = self._create_stream_service(dify_gateway=dify_gateway)
+        payload = ChatStreamRequest.model_validate(
+            {
+                "provider": "dify",
+                "conversation_id": conversation.id,
+                "input": {
+                    "parts": [
+                        {"type": "text", "text": "Only this prompt"},
+                    ]
+                },
+            }
+        )
+
+        prepared = await stream_service.prepare_chat_stream(FakeRequest(), payload)
+
+        self.assertEqual(dify_gateway.last_query, "Only this prompt")
+        self.assertEqual(dify_gateway.last_user, f"conversation:{conversation.id}")
+        self.assertEqual(
+            dify_gateway.last_inputs,
+            {
+                "target_score_outline": 85,
+                "target_score_draft": 90,
+            },
+        )
+        self.assertEqual(dify_gateway.parameters_calls, 1)
+        self.assertEqual(prepared.model, "dify-chatflow")
+        self.assertIsNone(stream_service.openai_gateway.last_request_args)
+        await prepared.stream.aclose()
+
+    async def test_prepare_dify_chat_stream_fails_fast_for_unknown_required_input(self) -> None:
+        dify_gateway = FakeDifyGateway(
+            parameters_payload={
+                "user_input_form": [
+                    {
+                        "number": {
+                            "variable": "target_score_outline",
+                            "required": True,
+                        }
+                    },
+                    {
+                        "number": {
+                            "variable": "unexpected_score",
+                            "required": True,
+                        }
+                    },
+                ]
+            }
+        )
+        stream_service = self._create_stream_service(dify_gateway=dify_gateway)
+        payload = ChatStreamRequest.model_validate(
+            {
+                "provider": "dify",
+                "input": {
+                    "parts": [
+                        {"type": "text", "text": "Only this prompt"},
+                    ]
+                },
+            }
+        )
+
+        with self.assertRaisesRegex(Exception, "unexpected_score") as caught:
+            await stream_service.prepare_chat_stream(FakeRequest(), payload)
+
+        self.assertIn(PUBLIC_DIFY_PARAMETERS_ERROR, str(caught.exception))
+        self.assertIsNone(dify_gateway.last_query)
+
+    async def test_prepare_dify_chat_stream_rejects_images(self) -> None:
+        upload_path = self.base_path / "uploads" / "upload-image.webp"
+        upload_path.write_bytes(b"RIFFmockwebp")
+        created_at = datetime.now(UTC).isoformat(timespec="seconds")
+        await self.repository.create_upload(
+            upload_id="upload-image",
+            media_type="image/webp",
+            storage_path=str(upload_path),
+            byte_size=upload_path.stat().st_size,
+            created_at=created_at,
+        )
+        stream_service = self._create_stream_service()
+        payload = ChatStreamRequest.model_validate(
+            {
+                "provider": "dify",
+                "input": {
+                    "parts": [
+                        {"type": "text", "text": "Ignore the image"},
+                        {"type": "image", "upload_id": "upload-image"},
+                    ]
+                },
+            }
+        )
+
+        with self.assertRaisesRegex(Exception, "Dify mode only supports text messages."):
+            await stream_service.prepare_chat_stream(FakeRequest(), payload)
+
+    async def test_generate_dify_chat_stream_maps_sse_to_ndjson(self) -> None:
+        conversation, messages = await self._seed_streaming_assistant()
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
+        prepared = PreparedChatStream(
+            stream=FakeDifyResponse(
+                [
+                    (0.0, 'event: message'),
+                    (0.0, 'data: {"task_id":"task-1","answer":"Hello"}'),
+                    (0.0, ""),
+                    (0.0, 'data: {"event":"message","task_id":"task-1","answer":" world"}'),
+                    (0.0, ""),
+                    (0.0, 'data: {"event":"message_end","task_id":"task-1"}'),
+                    (0.0, ""),
+                ]
+            ),
+            provider="dify",
+            start_time=0.0,
+            message_count=1,
+            model="dify-chatflow",
+            conversation=conversation,
+            user_message=messages.user,
+            assistant_message=messages.assistant,
+        )
+
+        events: list[dict[str, object]] = []
+        async for payload in stream_service.generate_chat_stream(request, prepared):
+            events.append(json.loads(payload.decode("utf-8")))
+
+        self.assertEqual(events[0]["event"], "meta")
+        self.assertEqual(events[1]["delta"], "Hello")
+        self.assertEqual(events[2]["delta"], " world")
+        self.assertEqual(events[-1]["event"], "done")
+        self.assertEqual(events[-1]["message"]["finish_reason"], "stop")
+
+    async def test_cancelling_dify_chat_stream_calls_stop_api(self) -> None:
+        conversation, messages = await self._seed_streaming_assistant()
+        request = FakeRequest()
+        dify_gateway = FakeDifyGateway()
+        stream_service = self._create_stream_service(dify_gateway=dify_gateway)
+        conversation_service = ConversationService(self.repository, self.registry)
+        prepared = PreparedChatStream(
+            stream=FakeDifyResponse(
+                [
+                    (0.0, 'data: {"event":"message","task_id":"task-9","answer":"Hello"}'),
+                    (0.0, ""),
+                    (0.4, 'data: {"event":"message","task_id":"task-9","answer":" world"}'),
+                    (0.0, ""),
+                ]
+            ),
+            provider="dify",
+            start_time=0.0,
+            message_count=1,
+            model="dify-chatflow",
+            conversation=conversation,
+            user_message=messages.user,
+            assistant_message=messages.assistant,
+        )
+
+        first_delta_seen = asyncio.Event()
+
+        async def consume() -> None:
+            async for payload in stream_service.generate_chat_stream(request, prepared):
+                event = json.loads(payload.decode("utf-8"))
+                if event["event"] == "delta":
+                    first_delta_seen.set()
+
+        consumer = asyncio.create_task(consume())
+        await asyncio.wait_for(first_delta_seen.wait(), timeout=1)
+        await conversation_service.cancel_message(conversation.id, messages.assistant.id)
+        await asyncio.wait_for(consumer, timeout=1)
+
+        self.assertEqual(
+            dify_gateway.stop_calls,
+            [("task-9", f"conversation:{conversation.id}")],
+        )
+
+    async def test_generate_dify_chat_stream_surfaces_timeout_error(self) -> None:
+        conversation, messages = await self._seed_streaming_assistant()
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
+        prepared = PreparedChatStream(
+            stream=FailingDifyResponse(httpx.ReadTimeout("timed out")),
+            provider="dify",
+            start_time=0.0,
+            message_count=1,
+            model="dify-chatflow",
+            conversation=conversation,
+            user_message=messages.user,
+            assistant_message=messages.assistant,
+        )
+
+        events: list[dict[str, object]] = []
+        async for payload in stream_service.generate_chat_stream(request, prepared):
+            events.append(json.loads(payload.decode("utf-8")))
+
+        self.assertEqual(events[0]["event"], "meta")
+        self.assertEqual(events[-1]["event"], "error")
+        self.assertEqual(events[-1]["error"], PUBLIC_DIFY_TIMEOUT_ERROR)
+
+        stored_message = await self.repository.get_message(messages.assistant.id)
+        self.assertIsNotNone(stored_message)
+        self.assertEqual(stored_message.status, "failed")
+        self.assertEqual(stored_message.error, PUBLIC_DIFY_TIMEOUT_ERROR)
 
     def test_utc_now_keeps_subsecond_precision(self) -> None:
         self.assertRegex(utc_now(), r"\.\d{6}\+00:00$")
