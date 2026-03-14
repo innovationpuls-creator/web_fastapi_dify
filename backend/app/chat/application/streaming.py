@@ -54,6 +54,7 @@ from backend.app.chat.infrastructure.persistence import (
 from backend.app.chat.schemas import (
     ChatStreamEvent,
     ChatStreamRequest,
+    GenerationOptions,
     ImageInputPart,
     InputPart,
     TextInputPart,
@@ -65,8 +66,33 @@ from backend.app.core.settings import AppSettings
 logger = logging.getLogger(__name__)
 
 
+def extract_usage_metrics(chunk: Any) -> tuple[int | None, int | None, int | None]:
+    usage = getattr(chunk, "usage", None)
+    if usage is None:
+        return None, None, None
+
+    if isinstance(usage, dict):
+        prompt_tokens = usage.get("prompt_tokens")
+        completion_tokens = usage.get("completion_tokens")
+        total_tokens = usage.get("total_tokens")
+    else:
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        total_tokens = getattr(usage, "total_tokens", None)
+
+    return prompt_tokens, completion_tokens, total_tokens
+
+
 def build_chat_request_args(
     payload: ChatStreamRequest,
+    settings: AppSettings,
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return build_generation_request_args(payload.generation, settings, messages)
+
+
+def build_generation_request_args(
+    generation: GenerationOptions,
     settings: AppSettings,
     messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -77,11 +103,11 @@ def build_chat_request_args(
     request_args: dict[str, Any] = {
         "model": settings.openai_model,
         "messages": upstream_messages,
-        "temperature": payload.generation.temperature,
+        "temperature": generation.temperature,
         "stream": True,
     }
-    if payload.generation.max_output_tokens is not None:
-        request_args["max_tokens"] = payload.generation.max_output_tokens
+    if generation.max_output_tokens is not None:
+        request_args["max_tokens"] = generation.max_output_tokens
     return request_args
 
 
@@ -243,6 +269,128 @@ class ChatStreamService:
             assistant_message=assistant_message,
         )
 
+    async def prepare_edit_stream(
+        self,
+        request: Request,
+        conversation_id: str,
+        message_id: str,
+        payload: ChatStreamRequest,
+    ) -> PreparedChatStream:
+        prepared_input = await self._prepare_input(payload.input.parts)
+        if prepared_input.images:
+            raise ChatPreStreamError(
+                status_code=409,
+                detail="Only the last pure-text user message can be edited.",
+            )
+
+        conversation, history, user_message, assistant_message = await self._resolve_last_turn(
+            conversation_id
+        )
+        if user_message.id != message_id:
+            raise ChatPreStreamError(
+                status_code=409,
+                detail="Only the last turn can be edited.",
+            )
+        if any(part.type == "image" for part in user_message.parts):
+            raise ChatPreStreamError(
+                status_code=409,
+                detail="Only the last pure-text user message can be edited.",
+            )
+
+        start_time = time.perf_counter()
+        upstream_messages = await self._build_upstream_messages(history)
+        upstream_messages.append(await self._build_current_turn_message(prepared_input))
+        stream = await self._open_stream(
+            request,
+            build_generation_request_args(
+                payload.generation,
+                self.settings,
+                upstream_messages,
+            ),
+            len(upstream_messages),
+            start_time,
+        )
+
+        updated_at = utc_now()
+        refreshed_user = await self.repository.update_message(
+            message_id=user_message.id,
+            status="completed",
+            preview_text=prepared_input.preview_text,
+            text_content="\n\n".join(prepared_input.text_parts),
+            updated_at=updated_at,
+            created_at=user_message.created_at,
+            model=None,
+            finish_reason=None,
+            error=None,
+            thinking_completed_at=None,
+            input_tokens=None,
+            output_tokens=None,
+            total_tokens=None,
+            latency_ms=None,
+        )
+        refreshed_assistant = await self._restart_assistant_message(assistant_message.id)
+        refreshed_conversation = await self.repository.get_conversation(conversation_id)
+        if (
+            refreshed_user is None
+            or refreshed_assistant is None
+            or refreshed_conversation is None
+        ):
+            await stream.close()
+            raise ChatPreStreamError(status_code=500, detail="Internal server error.")
+
+        return PreparedChatStream(
+            stream=stream,
+            start_time=start_time,
+            message_count=len(upstream_messages),
+            model=self.settings.openai_model,
+            conversation=refreshed_conversation,
+            user_message=refreshed_user,
+            assistant_message=refreshed_assistant,
+        )
+
+    async def prepare_regenerate_stream(
+        self,
+        request: Request,
+        conversation_id: str,
+        message_id: str,
+        generation: GenerationOptions,
+    ) -> PreparedChatStream:
+        conversation, history, user_message, assistant_message = await self._resolve_last_turn(
+            conversation_id
+        )
+        if assistant_message.id != message_id:
+            raise ChatPreStreamError(
+                status_code=409,
+                detail="Only the last assistant reply can be regenerated.",
+            )
+
+        start_time = time.perf_counter()
+        prepared_input = self._prepared_input_from_message(user_message)
+        upstream_messages = await self._build_upstream_messages(history)
+        upstream_messages.append(await self._build_current_turn_message(prepared_input))
+        stream = await self._open_stream(
+            request,
+            build_generation_request_args(generation, self.settings, upstream_messages),
+            len(upstream_messages),
+            start_time,
+        )
+
+        refreshed_assistant = await self._restart_assistant_message(assistant_message.id)
+        refreshed_conversation = await self.repository.get_conversation(conversation_id)
+        if refreshed_assistant is None or refreshed_conversation is None:
+            await stream.close()
+            raise ChatPreStreamError(status_code=500, detail="Internal server error.")
+
+        return PreparedChatStream(
+            stream=stream,
+            start_time=start_time,
+            message_count=len(upstream_messages),
+            model=self.settings.openai_model,
+            conversation=refreshed_conversation,
+            user_message=user_message,
+            assistant_message=refreshed_assistant,
+        )
+
     async def generate_chat_stream(
         self,
         request: Request,
@@ -251,6 +399,9 @@ class ChatStreamService:
         full_content_parts: list[str] = []
         finish_reason: str | None = None
         thinking_completed_at = prepared_stream.assistant_message.thinking_completed_at
+        input_tokens = prepared_stream.assistant_message.input_tokens
+        output_tokens = prepared_stream.assistant_message.output_tokens
+        total_tokens = prepared_stream.assistant_message.total_tokens
         stream = prepared_stream.stream
         start_time = prepared_stream.start_time
         chunk_count = 0
@@ -374,6 +525,16 @@ class ChatStreamService:
                 if choice.finish_reason:
                     finish_reason = choice.finish_reason
 
+                chunk_input_tokens, chunk_output_tokens, chunk_total_tokens = (
+                    extract_usage_metrics(chunk)
+                )
+                if chunk_input_tokens is not None:
+                    input_tokens = chunk_input_tokens
+                if chunk_output_tokens is not None:
+                    output_tokens = chunk_output_tokens
+                if chunk_total_tokens is not None:
+                    total_tokens = chunk_total_tokens
+
                 delta = _extract_delta_content(choice.delta.content)
                 if not delta:
                     continue
@@ -430,6 +591,10 @@ class ChatStreamService:
                 finish_reason=finish_reason,
                 error=None,
                 thinking_completed_at=thinking_completed_at,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                latency_ms=duration_ms,
             )
             updated_conversation = await self.repository.get_conversation(
                 prepared_stream.conversation.id
@@ -474,6 +639,10 @@ class ChatStreamService:
                 finish_reason=finish_reason,
                 error=PUBLIC_STREAM_ERROR,
                 thinking_completed_at=thinking_completed_at,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                latency_ms=duration_ms,
             )
             logger.exception(
                 "chat_stream_upstream_error",
@@ -512,6 +681,10 @@ class ChatStreamService:
                 finish_reason=finish_reason,
                 error="Internal server error.",
                 thinking_completed_at=thinking_completed_at,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                latency_ms=duration_ms,
             )
             logger.exception(
                 "chat_stream_unexpected_error",
@@ -601,6 +774,129 @@ class ChatStreamService:
             images=images,
             preview_text=preview_from_input_parts(parts),
             title_text=derive_title(parts),
+        )
+
+    async def _resolve_last_turn(
+        self,
+        conversation_id: str,
+    ) -> tuple[ConversationRecord, list[MessageRecord], MessageRecord, MessageRecord]:
+        conversation = await self.repository.get_conversation(conversation_id)
+        if conversation is None:
+            raise ChatPreStreamError(status_code=404, detail="Conversation not found.")
+
+        messages = await self.repository.list_messages(conversation_id)
+        if len(messages) < 2:
+            raise ChatPreStreamError(status_code=409, detail="Only the last turn can be updated.")
+
+        user_message = messages[-2]
+        assistant_message = messages[-1]
+        if user_message.role != "user" or assistant_message.role != "assistant":
+            raise ChatPreStreamError(status_code=409, detail="Only the last turn can be updated.")
+
+        return conversation, messages[:-2], user_message, assistant_message
+
+    async def _open_stream(
+        self,
+        request: Request,
+        request_args: dict[str, Any],
+        message_count: int,
+        start_time: float,
+    ) -> Any:
+        try:
+            logger.info(
+                "chat_stream_started",
+                extra=build_log_context(
+                    request,
+                    feature="chat",
+                    model=self.settings.openai_model,
+                    message_count=message_count,
+                ),
+            )
+            return await self.openai_gateway.create_chat_stream(request_args)
+        except OpenAIError as exc:
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.exception(
+                "chat_stream_upstream_error",
+                extra=build_log_context(
+                    request,
+                    feature="chat",
+                    model=self.settings.openai_model,
+                    message_count=message_count,
+                    duration_ms=duration_ms,
+                    status_code=502,
+                ),
+            )
+            raise ChatPreStreamError(
+                status_code=502,
+                detail="Upstream chat stream could not be established.",
+                upstream_error=PUBLIC_UPSTREAM_ERROR,
+            ) from exc
+        except Exception as exc:
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.exception(
+                "chat_stream_prepare_failed",
+                extra=build_log_context(
+                    request,
+                    feature="chat",
+                    model=self.settings.openai_model,
+                    message_count=message_count,
+                    duration_ms=duration_ms,
+                    status_code=500,
+                ),
+            )
+            raise ChatPreStreamError(status_code=500, detail="Internal server error.") from exc
+
+    async def _restart_assistant_message(
+        self,
+        message_id: str,
+    ) -> MessageRecord | None:
+        restarted_at = utc_now()
+        assistant_message = await self.repository.update_message(
+            message_id=message_id,
+            status="streaming",
+            preview_text="Thinking...",
+            text_content="",
+            updated_at=restarted_at,
+            created_at=restarted_at,
+            model=self.settings.openai_model,
+            finish_reason=None,
+            error=None,
+            thinking_completed_at=None,
+            input_tokens=None,
+            output_tokens=None,
+            total_tokens=None,
+            latency_ms=None,
+        )
+        if assistant_message is None:
+            return None
+        await self.cancellation_registry.register(
+            conversation_id=assistant_message.conversation_id,
+            message_id=assistant_message.id,
+            model=self.settings.openai_model,
+            created_at=assistant_message.created_at,
+            thinking_completed_at=None,
+        )
+        return assistant_message
+
+    def _prepared_input_from_message(self, message: MessageRecord) -> PreparedInput:
+        text_parts = [
+            part.text.strip()
+            for part in message.parts
+            if part.type == "text" and part.text and part.text.strip()
+        ]
+        images = [
+            PreparedImage(
+                media_type=part.asset.media_type,
+                upload_storage_path=part.asset.storage_path,
+            )
+            for part in message.parts
+            if part.type == "image" and part.asset is not None
+        ]
+        return PreparedInput(
+            text_parts=text_parts,
+            images=images,
+            preview_text=message.preview_text,
+            title_text=message.preview_text,
         )
 
     async def _build_upstream_messages(

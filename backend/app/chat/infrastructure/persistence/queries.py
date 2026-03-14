@@ -47,6 +47,10 @@ LIST_MESSAGES_QUERY = """
         model,
         finish_reason,
         error,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        latency_ms,
         created_at,
         updated_at,
         thinking_completed_at
@@ -70,6 +74,10 @@ GET_MESSAGE_QUERY = """
         model,
         finish_reason,
         error,
+        input_tokens,
+        output_tokens,
+        total_tokens,
+        latency_ms,
         created_at,
         updated_at,
         thinking_completed_at

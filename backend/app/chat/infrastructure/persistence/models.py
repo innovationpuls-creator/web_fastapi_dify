@@ -49,6 +49,10 @@ class MessageRecord:
     created_at: str
     updated_at: str
     thinking_completed_at: str | None
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+    latency_ms: float | None
     parts: list[MessagePartRecord]
 
 

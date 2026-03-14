@@ -5,6 +5,7 @@ import {
   type ConversationDetail,
   type ConversationSummary,
   type GenerationOptions,
+  type MessageMetrics,
   type TextMessagePart,
 } from "../../services/api";
 import { hasCompleteThinkingBlock } from "../../utils/assistantContent";
@@ -77,6 +78,8 @@ export type StreamRuntime = {
   metaReceived: boolean;
   stopRequested: boolean;
 };
+
+export type AssistantFooterMetrics = MessageMetrics | null;
 
 export const createLocalId = (prefix: string) => {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -173,6 +176,9 @@ export const getMessageText = (message: DisplayMessage) =>
     .filter((part): part is TextMessagePart => part.type === "text")
     .map((part) => part.text)
     .join("\n\n");
+
+export const messageHasImages = (message: DisplayMessage) =>
+  message.parts.some((part) => part.type === "image");
 
 export const buildAssistantParts = (message: DisplayMessage, text: string): DisplayPart[] => {
   const nextParts: DisplayPart[] = message.parts

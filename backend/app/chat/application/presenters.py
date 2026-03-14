@@ -10,6 +10,7 @@ from backend.app.chat.infrastructure.persistence import (
 )
 from backend.app.chat.schemas import (
     ChatMessageResponse,
+    MessageMetrics,
     ChatStreamEvent,
     ConversationDetail,
     ConversationSummary,
@@ -57,6 +58,15 @@ def message_part_to_schema(part: MessagePartRecord) -> MessagePart:
 
 
 def message_to_response(message: MessageRecord) -> ChatMessageResponse:
+    metrics = None
+    if message.role == "assistant":
+        metrics = MessageMetrics(
+            input_tokens=message.input_tokens,
+            output_tokens=message.output_tokens,
+            total_tokens=message.total_tokens,
+            latency_ms=message.latency_ms,
+        )
+
     return ChatMessageResponse(
         id=message.id,
         conversation_id=message.conversation_id,
@@ -69,6 +79,7 @@ def message_to_response(message: MessageRecord) -> ChatMessageResponse:
         model=message.model,
         finish_reason=message.finish_reason,
         error=message.error,
+        metrics=metrics,
     )
 
 

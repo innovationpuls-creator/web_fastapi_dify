@@ -29,7 +29,6 @@ const renderHarness = (options?: { onClose?: () => void }) => {
         <MobileHistorySheet
           conversations={conversations}
           activeConversationId={conversations[0].id}
-          deleteConfirmId={null}
           isOpen={isOpen}
           isBusy={false}
           isDraftSelected={false}
@@ -42,7 +41,7 @@ const renderHarness = (options?: { onClose?: () => void }) => {
           onStartNewChat={() => undefined}
           onSelectConversation={() => undefined}
           onDeleteConversation={() => undefined}
-          onCancelDelete={() => undefined}
+          onRenameConversation={() => undefined}
         />
       </>
     );
@@ -83,12 +82,12 @@ describe("MobileHistorySheet", () => {
     await user.click(launcher);
 
     const closeButton = screen.getByRole("button", { name: /close history/i });
-    const deleteButton = screen.getByRole("button", { name: /delete/i });
+    const actionsButton = screen.getByRole("button", { name: /open actions for alpha/i });
 
     await waitFor(() => expect(closeButton).toHaveFocus());
 
     await user.tab({ shift: true });
-    expect(deleteButton).toHaveFocus();
+    expect(actionsButton).toHaveFocus();
 
     await user.tab();
     expect(closeButton).toHaveFocus();

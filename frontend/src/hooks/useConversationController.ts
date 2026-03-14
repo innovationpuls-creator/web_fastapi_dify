@@ -5,6 +5,7 @@ import {
   getConversation,
   getHealth,
   listConversations,
+  renameConversation as renameConversationRequest,
   type ConversationSummary,
 } from "../services/api";
 import {
@@ -285,11 +286,6 @@ export const useConversationController = () => {
         return;
       }
 
-      if (deleteConfirmId !== conversationId) {
-        setDeleteConfirmId(conversationId);
-        return;
-      }
-
       setHistoryMotionSource("user");
       await deleteConversationRequest(conversationId);
       setDeleteConfirmId(null);
@@ -309,8 +305,31 @@ export const useConversationController = () => {
         }
       }
     },
-    [deleteConfirmId, loadConversationDetail, setSceneMotion],
+    [loadConversationDetail, setSceneMotion],
   );
+
+  const renameConversation = useCallback(async (conversationId: string, title: string) => {
+    const summary = await renameConversationRequest(conversationId, { title });
+    setHistoryMotionSource("user");
+    syncSummary(summary);
+    setConversationDetails((current) => {
+      const detail = current[conversationId];
+      if (!detail) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [conversationId]: {
+          ...detail,
+          title: summary.title,
+          updated_at: summary.updated_at,
+          last_message_preview: summary.last_message_preview,
+          message_count: summary.message_count,
+        },
+      };
+    });
+  }, [syncSummary]);
 
   const toggleDesktopSidebar = useCallback(() => {
     setSidebarCollapsed((current) => !current);
@@ -421,6 +440,7 @@ export const useConversationController = () => {
     restoreConversationSnapshot,
     clearDeleteConfirmation,
     deleteConversation,
+    renameConversation,
     toggleDesktopSidebar,
     closeMobileSidebar,
     openMobileSidebar,

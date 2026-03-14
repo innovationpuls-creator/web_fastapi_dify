@@ -25,6 +25,10 @@ def strip_visible_preview(value: str, *, fallback: str) -> str:
     return f"{collapsed[:117]}..." if len(collapsed) > 120 else collapsed
 
 
+def normalize_conversation_title(value: str) -> str:
+    return " ".join(value.split())
+
+
 def derive_title(parts: list[InputPart]) -> str:
     for part in parts:
         if isinstance(part, TextInputPart):

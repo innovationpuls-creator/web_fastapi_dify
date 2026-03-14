@@ -14,6 +14,7 @@ import {
   getMessageText,
   type DisplayMessage,
 } from "../../features/chat/model";
+import { resolveLastTurnActions } from "../../features/chat/turnActions";
 
 type ChatViewportProps = {
   viewportRef: React.RefObject<HTMLDivElement>;
@@ -27,6 +28,8 @@ type ChatViewportProps = {
   motionSource: MotionSource;
   onScroll: () => void;
   onRetryScreen: () => void;
+  onEditMessage: (messageId: string) => void;
+  onRegenerateMessage: (messageId: string) => void;
 };
 
 const stateVariants = {
@@ -47,6 +50,8 @@ const ChatViewport = ({
   motionSource,
   onScroll,
   onRetryScreen,
+  onEditMessage,
+  onRegenerateMessage,
 }: ChatViewportProps) => {
   const reduceMotion = useReducedMotion();
   const isConversationLoading =
@@ -55,6 +60,10 @@ const ChatViewport = ({
     !activeConversation;
   const sceneTransition = getSceneTransition(motionSource, Boolean(reduceMotion));
   const shouldLayoutRows = shouldAnimateLayout(motionSource);
+  const lastTurnActions = resolveLastTurnActions(
+    currentMessages,
+    phase === "streaming" || phase === "stopping",
+  );
 
   return (
     <div ref={viewportRef} className="flex-1 overflow-y-auto" onScroll={onScroll}>
@@ -139,6 +148,10 @@ const ChatViewport = ({
                       message={message}
                       isStreaming={isStreamingMessage}
                       previousUserText={previousMessage?.role === "user" ? getMessageText(previousMessage) : ""}
+                      showEdit={message.id === lastTurnActions.editableUserMessageId}
+                      showRegenerate={message.id === lastTurnActions.regenerableAssistantMessageId}
+                      onEdit={() => onEditMessage(message.id)}
+                      onRegenerate={() => onRegenerateMessage(message.id)}
                     />
                   </motion.div>
                 );

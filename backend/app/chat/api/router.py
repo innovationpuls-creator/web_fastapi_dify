@@ -22,7 +22,9 @@ from backend.app.chat.schemas import (
     ChatStreamRequest,
     ChatUploadResponse,
     ConversationDetail,
+    ConversationRenameRequest,
     ConversationSummary,
+    MessageRegenerateRequest,
 )
 from backend.app.core.api_errors import ApiErrorResponse, build_api_error_response
 from backend.app.core.dependencies import get_request_id_value
@@ -65,6 +67,91 @@ async def chat_stream(
     )
 
 
+@router.post(
+    "/chat/conversations/{conversation_id}/messages/{message_id}/edit-stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {
+                NDJSON_MEDIA_TYPE: {"schema": ChatStreamEvent.model_json_schema()}
+            },
+            "description": "NDJSON stream. Each line is a ChatStreamEvent JSON object.",
+        },
+        404: {"model": ApiErrorResponse},
+        409: {"model": ApiErrorResponse},
+        422: {"model": ApiErrorResponse},
+        500: {"model": ApiErrorResponse},
+        502: {"model": ApiErrorResponse},
+    },
+)
+async def edit_chat_stream(
+    conversation_id: str,
+    message_id: str,
+    payload: ChatStreamRequest,
+    request: Request,
+    stream_service: ChatStreamService = Depends(get_stream_service),
+    request_id: str = Depends(get_request_id_value),
+) -> Response:
+    try:
+        prepared_stream = await stream_service.prepare_edit_stream(
+            request,
+            conversation_id,
+            message_id,
+            payload,
+        )
+    except ChatPreStreamError as exc:
+        return build_chat_error_response(request_id=request_id, exc=exc)
+
+    request.state.is_streaming_response = True
+    return StreamingResponse(
+        stream_service.generate_chat_stream(request, prepared_stream),
+        media_type=NDJSON_MEDIA_TYPE,
+        headers=STREAM_HEADERS,
+    )
+
+
+@router.post(
+    "/chat/conversations/{conversation_id}/messages/{message_id}/regenerate-stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {
+                NDJSON_MEDIA_TYPE: {"schema": ChatStreamEvent.model_json_schema()}
+            },
+            "description": "NDJSON stream. Each line is a ChatStreamEvent JSON object.",
+        },
+        404: {"model": ApiErrorResponse},
+        409: {"model": ApiErrorResponse},
+        500: {"model": ApiErrorResponse},
+        502: {"model": ApiErrorResponse},
+    },
+)
+async def regenerate_chat_stream(
+    conversation_id: str,
+    message_id: str,
+    payload: MessageRegenerateRequest,
+    request: Request,
+    stream_service: ChatStreamService = Depends(get_stream_service),
+    request_id: str = Depends(get_request_id_value),
+) -> Response:
+    try:
+        prepared_stream = await stream_service.prepare_regenerate_stream(
+            request,
+            conversation_id,
+            message_id,
+            payload.generation,
+        )
+    except ChatPreStreamError as exc:
+        return build_chat_error_response(request_id=request_id, exc=exc)
+
+    request.state.is_streaming_response = True
+    return StreamingResponse(
+        stream_service.generate_chat_stream(request, prepared_stream),
+        media_type=NDJSON_MEDIA_TYPE,
+        headers=STREAM_HEADERS,
+    )
+
+
 @router.get("/chat/conversations", response_model=list[ConversationSummary])
 async def conversations(
     conversation_service: ConversationService = Depends(get_conversation_service),
@@ -88,8 +175,32 @@ async def conversation_detail(
             status_code=404,
             detail="Conversation not found.",
             request_id=request_id,
-        )
+    )
     return detail
+
+
+@router.patch(
+    "/chat/conversations/{conversation_id}",
+    response_model=ConversationSummary,
+    responses={404: {"model": ApiErrorResponse}},
+)
+async def conversation_rename(
+    conversation_id: str,
+    payload: ConversationRenameRequest,
+    conversation_service: ConversationService = Depends(get_conversation_service),
+    request_id: str = Depends(get_request_id_value),
+) -> ConversationSummary | Response:
+    summary = await conversation_service.rename_conversation(
+        conversation_id,
+        payload.title,
+    )
+    if summary is None:
+        return build_api_error_response(
+            status_code=404,
+            detail="Conversation not found.",
+            request_id=request_id,
+        )
+    return summary
 
 
 @router.delete(

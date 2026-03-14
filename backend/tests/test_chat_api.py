@@ -106,6 +106,49 @@ class ChatApiTests(unittest.TestCase):
         self.assertEqual(payload["detail"], "Conversation not found.")
         self.assertIn("request_id", payload)
 
+    def test_patch_chat_conversation_renames_and_normalizes_title(self) -> None:
+        conversation = asyncio.run(
+            self.repository.create_conversation(
+                title="Old title",
+                created_at="2026-03-08T09:00:00+00:00",
+            )
+        )
+        asyncio.run(
+            self.repository.create_message(
+                conversation_id=conversation.id,
+                role="user",
+                status="completed",
+                preview_text="hello",
+                text_content="hello",
+                parts=[NewMessagePart(type="text", text="hello")],
+                created_at="2026-03-08T09:00:01+00:00",
+            )
+        )
+
+        with self._create_client() as client:
+            response = client.patch(
+                f"/chat/conversations/{conversation.id}",
+                json={"title": "   Renamed   conversation   title   "},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["id"], conversation.id)
+        self.assertEqual(payload["title"], "Renamed conversation title")
+        self.assertEqual(payload["last_message_preview"], "hello")
+
+    def test_patch_missing_chat_conversation_returns_api_error(self) -> None:
+        with self._create_client() as client:
+            response = client.patch(
+                "/chat/conversations/missing-conversation",
+                json={"title": "Updated title"},
+            )
+
+        self.assertEqual(response.status_code, 404)
+        payload = response.json()
+        self.assertEqual(payload["detail"], "Conversation not found.")
+        self.assertIn("request_id", payload)
+
     def test_cancel_message_uses_new_chat_conversations_route(self) -> None:
         conversation = asyncio.run(
             self.repository.create_conversation(

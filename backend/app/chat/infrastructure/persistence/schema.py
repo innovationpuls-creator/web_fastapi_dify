@@ -18,6 +18,10 @@ SCHEMA_SQL = """
         model TEXT,
         finish_reason TEXT,
         error TEXT,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        total_tokens INTEGER,
+        latency_ms REAL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         thinking_completed_at TEXT

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class TextInputPart(BaseModel):
@@ -78,6 +78,10 @@ class ChatStreamRequest(BaseModel):
     generation: GenerationOptions = Field(default_factory=GenerationOptions)
 
 
+class MessageRegenerateRequest(BaseModel):
+    generation: GenerationOptions = Field(default_factory=GenerationOptions)
+
+
 class TextMessagePart(BaseModel):
     type: Literal["text"]
     text: str
@@ -113,6 +117,27 @@ class ConversationSummary(BaseModel):
     message_count: int
 
 
+class ConversationRenameRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=80)
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("Conversation title cannot be empty.")
+        if len(normalized) > 80:
+            raise ValueError("Conversation title must be 80 characters or fewer.")
+        return normalized
+
+
+class MessageMetrics(BaseModel):
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    latency_ms: float | None = Field(default=None, ge=0)
+
+
 class ChatMessageResponse(BaseModel):
     id: str
     conversation_id: str
@@ -125,6 +150,7 @@ class ChatMessageResponse(BaseModel):
     model: str | None = None
     finish_reason: str | None = None
     error: str | None = None
+    metrics: MessageMetrics | None = None
 
 
 class ConversationDetail(ConversationSummary):

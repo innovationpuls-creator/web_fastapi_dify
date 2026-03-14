@@ -9,11 +9,11 @@ import {
   type MotionSource,
 } from "../../motion/tokens";
 import type { ConversationSummary } from "../../services/api";
+import ConversationHistoryList from "./ConversationHistoryList";
 
 type MobileHistorySheetProps = {
   conversations: ConversationSummary[];
   activeConversationId: string | null;
-  deleteConfirmId: string | null;
   isOpen: boolean;
   isBusy: boolean;
   isDraftSelected: boolean;
@@ -23,13 +23,12 @@ type MobileHistorySheetProps = {
   onStartNewChat: () => void;
   onSelectConversation: (conversationId: string) => void;
   onDeleteConversation: (conversationId: string) => void;
-  onCancelDelete: () => void;
+  onRenameConversation: (conversationId: string, title: string) => Promise<void> | void;
 };
 
 const MobileHistorySheet = ({
   conversations,
   activeConversationId,
-  deleteConfirmId,
   isOpen,
   isBusy,
   isDraftSelected,
@@ -39,7 +38,7 @@ const MobileHistorySheet = ({
   onStartNewChat,
   onSelectConversation,
   onDeleteConversation,
-  onCancelDelete,
+  onRenameConversation,
 }: MobileHistorySheetProps) => {
   const reduceMotion = useReducedMotion();
   const enableLayout = shouldAnimateLayout(motionSource);
@@ -222,57 +221,15 @@ const MobileHistorySheet = ({
                 }}
                 transition={MOTION_TRANSITION.enter}
               >
-                {conversations.map((conversation) => {
-                  const isActive = conversation.id === activeConversationId;
-                  const isConfirming = deleteConfirmId === conversation.id;
-
-                  return (
-                    <motion.div
-                      key={conversation.id}
-                      layout={enableLayout ? "position" : false}
-                      className="history-row group flex items-start justify-between gap-3 rounded-[1rem] px-2"
-                      transition={MOTION_SPRING.list}
-                    >
-                      <button
-                        type="button"
-                        className={`block min-w-0 flex-1 truncate py-2 text-left text-sm transition ${
-                          isActive ? "text-white" : "text-zinc-500 hover:text-zinc-200"
-                        } disabled:cursor-not-allowed disabled:opacity-40`}
-                        onClick={() => onSelectConversation(conversation.id)}
-                        disabled={isBusy}
-                      >
-                        {conversation.title}
-                      </button>
-                      {isConfirming ? (
-                        <div className="flex shrink-0 items-center gap-2 pt-1">
-                          <button
-                            type="button"
-                            className="history-item-delete text-white opacity-100"
-                            onClick={() => onDeleteConversation(conversation.id)}
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            type="button"
-                            className="history-item-delete opacity-100"
-                            onClick={onCancelDelete}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          className="history-item-delete shrink-0 pt-1 opacity-100"
-                          onClick={() => onDeleteConversation(conversation.id)}
-                          disabled={isBusy}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </motion.div>
-                  );
-                })}
+                <ConversationHistoryList
+                  conversations={conversations}
+                  activeConversationId={activeConversationId}
+                  isBusy={isBusy}
+                  menuVisibility="always"
+                  onSelectConversation={onSelectConversation}
+                  onDeleteConversation={onDeleteConversation}
+                  onRenameConversation={onRenameConversation}
+                />
               </motion.nav>
             </motion.div>
           </motion.div>

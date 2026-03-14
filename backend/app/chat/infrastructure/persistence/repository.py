@@ -65,6 +65,19 @@ class ChatRepository:
     async def get_conversation(self, conversation_id: str) -> ConversationRecord | None:
         return await asyncio.to_thread(self._get_conversation, conversation_id)
 
+    async def update_conversation_title(
+        self,
+        conversation_id: str,
+        title: str,
+        updated_at: str,
+    ) -> ConversationRecord | None:
+        return await asyncio.to_thread(
+            self._update_conversation_title,
+            conversation_id,
+            title,
+            updated_at,
+        )
+
     async def list_conversations(self) -> list[ConversationRecord]:
         return await asyncio.to_thread(self._list_conversations)
 
@@ -95,6 +108,10 @@ class ChatRepository:
         finish_reason: str | None = None,
         error: str | None = None,
         thinking_completed_at: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        latency_ms: float | None = None,
     ) -> MessageRecord:
         return await asyncio.to_thread(
             self._create_message,
@@ -110,6 +127,10 @@ class ChatRepository:
             finish_reason,
             error,
             thinking_completed_at,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            latency_ms,
         )
 
     async def update_message(
@@ -120,10 +141,15 @@ class ChatRepository:
         preview_text: str,
         text_content: str,
         updated_at: str,
+        created_at: str | None = None,
         model: str | None = None,
         finish_reason: str | None = None,
         error: str | None = None,
         thinking_completed_at: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        latency_ms: float | None = None,
     ) -> MessageRecord | None:
         return await asyncio.to_thread(
             self._update_message,
@@ -132,10 +158,15 @@ class ChatRepository:
             preview_text,
             text_content,
             updated_at,
+            created_at,
             model,
             finish_reason,
             error,
             thinking_completed_at,
+            input_tokens,
+            output_tokens,
+            total_tokens,
+            latency_ms,
         )
 
     async def create_upload(
@@ -212,6 +243,26 @@ class ChatRepository:
         with self._connect() as connection:
             return self._get_conversation_with_connection(connection, conversation_id)
 
+    def _update_conversation_title(
+        self,
+        conversation_id: str,
+        title: str,
+        updated_at: str,
+    ) -> ConversationRecord | None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE conversations
+                SET title = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (title, updated_at, conversation_id),
+            )
+            if connection.total_changes == 0:
+                return None
+            connection.commit()
+            return self._get_conversation_with_connection(connection, conversation_id)
+
     def _list_conversations(self) -> list[ConversationRecord]:
         with self._connect() as connection:
             rows = connection.execute(LIST_CONVERSATIONS_QUERY).fetchall()
@@ -250,6 +301,10 @@ class ChatRepository:
         finish_reason: str | None,
         error: str | None,
         thinking_completed_at: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        latency_ms: float | None = None,
     ) -> MessageRecord:
         with self._connect() as connection:
             connection.execute(
@@ -264,11 +319,15 @@ class ChatRepository:
                     model,
                     finish_reason,
                     error,
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                    latency_ms,
                     created_at,
                     updated_at,
                     thinking_completed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     message_id,
@@ -280,6 +339,10 @@ class ChatRepository:
                     model,
                     finish_reason,
                     error,
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                    latency_ms,
                     created_at,
                     created_at,
                     thinking_completed_at,
@@ -300,10 +363,15 @@ class ChatRepository:
         preview_text: str,
         text_content: str,
         updated_at: str,
+        created_at: str | None,
         model: str | None,
         finish_reason: str | None,
         error: str | None,
         thinking_completed_at: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        total_tokens: int | None = None,
+        latency_ms: float | None = None,
     ) -> MessageRecord | None:
         with self._connect() as connection:
             row = connection.execute(
@@ -319,20 +387,30 @@ class ChatRepository:
                 SET status = ?,
                     preview_text = ?,
                     text_content = ?,
+                    created_at = COALESCE(?, created_at),
                     model = COALESCE(?, model),
                     finish_reason = ?,
                     error = ?,
+                    input_tokens = ?,
+                    output_tokens = ?,
+                    total_tokens = ?,
+                    latency_ms = ?,
                     updated_at = ?,
-                    thinking_completed_at = COALESCE(?, thinking_completed_at)
+                    thinking_completed_at = ?
                 WHERE id = ?
                 """,
                 (
                     status,
                     preview_text,
                     text_content,
+                    created_at,
                     model,
                     finish_reason,
                     error,
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                    latency_ms,
                     updated_at,
                     thinking_completed_at,
                     message_id,
@@ -362,6 +440,14 @@ class ChatRepository:
             connection.execute(
                 "ALTER TABLE messages ADD COLUMN thinking_completed_at TEXT"
             )
+        if "input_tokens" not in columns:
+            connection.execute("ALTER TABLE messages ADD COLUMN input_tokens INTEGER")
+        if "output_tokens" not in columns:
+            connection.execute("ALTER TABLE messages ADD COLUMN output_tokens INTEGER")
+        if "total_tokens" not in columns:
+            connection.execute("ALTER TABLE messages ADD COLUMN total_tokens INTEGER")
+        if "latency_ms" not in columns:
+            connection.execute("ALTER TABLE messages ADD COLUMN latency_ms REAL")
 
     def _table_exists(self, connection: sqlite3.Connection, table_name: str) -> bool:
         row = connection.execute(
@@ -405,6 +491,10 @@ class ChatRepository:
                     model TEXT,
                     finish_reason TEXT,
                     error TEXT,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    total_tokens INTEGER,
+                    latency_ms REAL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -419,6 +509,10 @@ class ChatRepository:
                     model,
                     finish_reason,
                     error,
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                    latency_ms,
                     created_at,
                     updated_at
                 )
@@ -432,6 +526,10 @@ class ChatRepository:
                     model,
                     finish_reason,
                     error,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
                     created_at,
                     updated_at
                 FROM messages;

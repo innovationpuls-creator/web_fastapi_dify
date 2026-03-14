@@ -197,6 +197,45 @@ class ChatRepositoryTests(unittest.IsolatedAsyncioTestCase):
             }
 
         self.assertIn("thinking_completed_at", columns)
+        self.assertIn("input_tokens", columns)
+        self.assertIn("output_tokens", columns)
+        self.assertIn("total_tokens", columns)
+        self.assertIn("latency_ms", columns)
+
+    async def test_update_message_persists_assistant_metrics(self) -> None:
+        conversation = await self.repository.create_conversation(
+            title="Metrics conversation",
+            created_at="2026-03-06T12:00:00+00:00",
+        )
+        message = await self.repository.create_message(
+            conversation_id=conversation.id,
+            role="assistant",
+            status="streaming",
+            preview_text="Thinking...",
+            text_content="",
+            parts=[],
+            created_at="2026-03-06T12:00:01+00:00",
+            model="test-model",
+        )
+
+        updated = await self.repository.update_message(
+            message_id=message.id,
+            status="completed",
+            preview_text="Final answer",
+            text_content="Final answer",
+            updated_at="2026-03-06T12:00:02+00:00",
+            model="test-model",
+            input_tokens=120,
+            output_tokens=42,
+            total_tokens=162,
+            latency_ms=987.5,
+        )
+
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.input_tokens, 120)
+        self.assertEqual(updated.output_tokens, 42)
+        self.assertEqual(updated.total_tokens, 162)
+        self.assertEqual(updated.latency_ms, 987.5)
 
     async def test_create_pop_delete_and_expire_uploads(self) -> None:
         created = await self.repository.create_upload(

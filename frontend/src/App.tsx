@@ -11,7 +11,13 @@ import ChatViewport from "./components/chat/ChatViewport";
 import ComposerPanel from "./components/chat/ComposerPanel";
 import MobileHistorySheet from "./components/chat/MobileHistorySheet";
 import SidebarHistory from "./components/chat/SidebarHistory";
-import { SIDEBAR_WIDTH, describeError, hasSendableContent } from "./features/chat/model";
+import {
+  SIDEBAR_WIDTH,
+  describeError,
+  getMessageText,
+  hasSendableContent,
+} from "./features/chat/model";
+import { resolveLastTurn } from "./features/chat/turnActions";
 import { useChatStreamController } from "./hooks/useChatStreamController";
 import { useComposerController } from "./hooks/useComposerController";
 import { useConversationController } from "./hooks/useConversationController";
@@ -34,6 +40,8 @@ function App() {
     hasSendableDraft;
   const submitButtonLabel = stream.isBusy
     ? "Busy"
+    : composer.isEditingMessage
+      ? "Update"
     : composer.hasUploadingUploads
       ? "Wait"
       : composer.hasErroredUploads
@@ -41,6 +49,8 @@ function App() {
         : "Send";
   const submitButtonTitle = stream.isBusy
     ? "Wait for the current response to finish."
+    : composer.isEditingMessage
+      ? "Update the latest message."
     : composer.hasUploadingUploads
       ? "Wait for image uploads to finish before sending."
       : composer.hasErroredUploads
@@ -88,6 +98,9 @@ function App() {
 
   const handleSelectConversation = async (conversationId: string) => {
     try {
+      if (composer.isEditingMessage) {
+        composer.cancelEdit();
+      }
       await conversation.selectConversation(conversationId, { isBusy: stream.isBusy });
     } catch (error) {
       setActionError(error, "Failed to load conversation.");
@@ -109,6 +122,15 @@ function App() {
       await conversation.deleteConversation(conversationId, { isBusy: stream.isBusy });
     } catch (error) {
       setActionError(error, "Failed to delete conversation.");
+    }
+  };
+
+  const handleRenameConversation = async (conversationId: string, title: string) => {
+    try {
+      await conversation.renameConversation(conversationId, title);
+    } catch (error) {
+      setActionError(error, "Failed to rename conversation.");
+      throw error;
     }
   };
 
@@ -138,6 +160,11 @@ function App() {
     }
 
     event.preventDefault();
+    if (composer.editingMessageId) {
+      void stream.sendEditedMessage(composer.editingMessageId);
+      return;
+    }
+
     void stream.sendPrompt();
   };
 
@@ -146,7 +173,31 @@ function App() {
       return;
     }
 
+    if (composer.editingMessageId) {
+      void stream.sendEditedMessage(composer.editingMessageId);
+      return;
+    }
+
     void stream.sendPrompt();
+  };
+
+  const handleEditMessage = (messageId: string) => {
+    if (stream.isBusy) {
+      return;
+    }
+
+    const { userMessage } = resolveLastTurn(conversation.currentMessages);
+    if (!userMessage || userMessage.id !== messageId) {
+      return;
+    }
+
+    composer.beginEdit(messageId, getMessageText(userMessage));
+    conversation.closeMobileSidebar();
+    focusInput();
+  };
+
+  const handleRegenerateMessage = (messageId: string) => {
+    void stream.regenerateMessage(messageId);
   };
 
   return (
@@ -155,8 +206,6 @@ function App() {
         <SidebarHistory
           conversations={conversation.conversations}
           activeConversationId={conversation.activeConversationId}
-          deleteConfirmId={conversation.deleteConfirmId}
-          recentBornConversationId={conversation.recentBornConversationId}
           sidebarCollapsed={conversation.sidebarCollapsed}
           isBusy={stream.isBusy}
           isDraftSelected={conversation.isDraftSelected}
@@ -166,13 +215,14 @@ function App() {
           onStartNewChat={handleStartNewChat}
           onSelectConversation={(conversationId) => void handleSelectConversation(conversationId)}
           onDeleteConversation={(conversationId) => void handleDeleteConversation(conversationId)}
-          onCancelDelete={conversation.clearDeleteConfirmation}
+          onRenameConversation={(conversationId, title) =>
+            handleRenameConversation(conversationId, title)
+          }
         />
 
         <MobileHistorySheet
           conversations={conversation.conversations}
           activeConversationId={conversation.activeConversationId}
-          deleteConfirmId={conversation.deleteConfirmId}
           isOpen={conversation.isSidebarOpen}
           isBusy={stream.isBusy}
           isDraftSelected={conversation.isDraftSelected}
@@ -182,7 +232,9 @@ function App() {
           onStartNewChat={handleStartNewChat}
           onSelectConversation={(conversationId) => void handleSelectConversation(conversationId)}
           onDeleteConversation={(conversationId) => void handleDeleteConversation(conversationId)}
-          onCancelDelete={conversation.clearDeleteConfirmation}
+          onRenameConversation={(conversationId, title) =>
+            handleRenameConversation(conversationId, title)
+          }
         />
 
         <main className="desktop-main flex min-h-screen flex-col">
@@ -215,6 +267,8 @@ function App() {
             motionSource={conversation.viewportMotionSource}
             onScroll={handleScroll}
             onRetryScreen={handleRetryScreen}
+            onEditMessage={handleEditMessage}
+            onRegenerateMessage={handleRegenerateMessage}
           />
         </main>
 
@@ -224,6 +278,7 @@ function App() {
           input={composer.input}
           pendingUploads={composer.pendingUploads}
           isInputFocused={composer.isInputFocused}
+          isEditingMessage={composer.isEditingMessage}
           dragActive={composer.dragActive}
           inputRippleKey={composer.inputRippleKey}
           isMobileSidebarOpen={conversation.isSidebarOpen}
@@ -232,6 +287,7 @@ function App() {
           fileInputRef={composer.fileInputRef}
           onRetryComposerError={stream.handleRetry}
           onStop={() => void stream.handleStop()}
+          onCancelEdit={composer.cancelEdit}
           onOpenFilePicker={composer.openFilePicker}
           onFileChange={(event) => composer.handleFileChange(event, { isBusy: stream.isBusy })}
           onTextareaChange={composer.handleInputChange}

@@ -23,6 +23,7 @@ export const useComposerController = () => {
   const [input, setInput] = useState("");
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [composerError, setComposerError] = useState<ComposerError | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [inputRippleKey, setInputRippleKey] = useState(0);
@@ -44,6 +45,7 @@ export const useComposerController = () => {
 
   const hasUploadingUploads = pendingUploads.some((upload) => upload.status === "uploading");
   const hasErroredUploads = pendingUploads.some((upload) => upload.status === "error");
+  const isEditingMessage = editingMessageId !== null;
 
   const focusInput = useCallback(() => {
     requestAnimationFrame(() => {
@@ -82,6 +84,35 @@ export const useComposerController = () => {
     setComposerError((current) => (current?.retryable ? null : current));
   }, []);
 
+  const clearEditState = useCallback(() => {
+    setEditingMessageId(null);
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setMotionSource("user");
+    setEditingMessageId(null);
+    setInput("");
+  }, []);
+
+  const beginEdit = useCallback((messageId: string, text: string) => {
+    setMotionSource("user");
+    releaseUploads(pendingUploadsRef.current, { deleteRemote: true });
+    setPendingUploads([]);
+    setComposerError(null);
+    setEditingMessageId(messageId);
+    setInput(text);
+    setDragActive(false);
+    dragDepthRef.current = 0;
+    requestAnimationFrame(() => resizeTextarea(textareaRef.current));
+  }, [releaseUploads]);
+
+  const restoreEditState = useCallback((messageId: string, text: string) => {
+    setMotionSource("system");
+    setEditingMessageId(messageId);
+    setInput(text);
+    requestAnimationFrame(() => resizeTextarea(textareaRef.current));
+  }, []);
+
   const resetComposer = useCallback(
     (options?: { deleteRemoteUploads?: boolean }) => {
       setMotionSource("system");
@@ -89,6 +120,7 @@ export const useComposerController = () => {
         deleteRemote: options?.deleteRemoteUploads ?? false,
       });
       setPendingUploads([]);
+      setEditingMessageId(null);
       setInput("");
       setComposerError(null);
       setDragActive(false);
@@ -100,6 +132,7 @@ export const useComposerController = () => {
 
   const restoreComposerSnapshot = useCallback((nextInput: string, uploads: PendingUpload[]) => {
     setMotionSource("system");
+    setEditingMessageId(null);
     setInput(nextInput);
     setPendingUploads(uploads.map(cloneUpload));
     setDragActive(false);
@@ -164,6 +197,15 @@ export const useComposerController = () => {
         return;
       }
 
+      if (editingMessageId) {
+        setMotionSource("user");
+        setComposerError({
+          message: "Images are unavailable while editing a message.",
+          retryable: false,
+        });
+        return;
+      }
+
       if (!validateFiles(files)) {
         return;
       }
@@ -177,7 +219,7 @@ export const useComposerController = () => {
         void beginUpload(upload);
       });
     },
-    [beginUpload, validateFiles],
+    [beginUpload, editingMessageId, validateFiles],
   );
 
   const retryUpload = useCallback(
@@ -310,6 +352,8 @@ export const useComposerController = () => {
     input,
     pendingUploads,
     composerError,
+    editingMessageId,
+    isEditingMessage,
     isInputFocused,
     dragActive,
     inputRippleKey,
@@ -327,6 +371,10 @@ export const useComposerController = () => {
     setMotionSource,
     focusInput,
     clearComposerError,
+    clearEditState,
+    cancelEdit,
+    beginEdit,
+    restoreEditState,
     handleInputChange,
     resetComposer,
     restoreComposerSnapshot,

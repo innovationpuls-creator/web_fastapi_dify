@@ -50,6 +50,7 @@ type ComposerPanelProps = {
   input: string;
   pendingUploads: PendingUpload[];
   isInputFocused: boolean;
+  isEditingMessage: boolean;
   dragActive: boolean;
   inputRippleKey: number;
   isMobileSidebarOpen: boolean;
@@ -58,6 +59,7 @@ type ComposerPanelProps = {
   fileInputRef: React.RefObject<HTMLInputElement>;
   onRetryComposerError: () => void;
   onStop: () => void;
+  onCancelEdit: () => void;
   onOpenFilePicker: () => void;
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onTextareaChange: (value: string) => void;
@@ -83,6 +85,7 @@ const ComposerPanel = ({
   input,
   pendingUploads,
   isInputFocused,
+  isEditingMessage,
   dragActive,
   isMobileSidebarOpen,
   motionSource,
@@ -90,6 +93,7 @@ const ComposerPanel = ({
   fileInputRef,
   onRetryComposerError,
   onStop,
+  onCancelEdit,
   onOpenFilePicker,
   onFileChange,
   onTextareaChange,
@@ -111,6 +115,7 @@ const ComposerPanel = ({
   const reduceMotion = useReducedMotion();
   const isStopping = phase === "stopping";
   const showThinkingState = phase === "streaming" || phase === "stopping";
+  const showEditState = isEditingMessage && !showThinkingState;
   const shellLayout = shouldAnimateLayout(motionSource) ? "position" : false;
   const presenceTransition = getSceneTransition(motionSource, Boolean(reduceMotion));
 
@@ -249,6 +254,27 @@ const ComposerPanel = ({
                   ) : null}
                 </AnimatePresence>
 
+                <AnimatePresence initial={false} mode="popLayout">
+                  {showEditState ? (
+                    <motion.div
+                      key="composer-editing"
+                      className="composer-inline-status-row"
+                      initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                      transition={presenceTransition}
+                    >
+                      <div className="composer-inline-status" role="status" aria-live="polite">
+                        <span className="composer-edit-indicator" aria-hidden="true" />
+                        <span>Editing last message</span>
+                      </div>
+                      <button type="button" className="composer-inline-stop" onClick={onCancelEdit}>
+                        Cancel
+                      </button>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+
                 <div className="composer-input-row">
                   <div className="fileUploadWrapper shrink-0">
                     <motion.button
@@ -256,17 +282,19 @@ const ComposerPanel = ({
                       aria-label="Add image"
                       className="composer-tool-button"
                       onClick={onOpenFilePicker}
-                      disabled={isStopping}
+                      disabled={isStopping || isEditingMessage}
                     >
                       <AddImageIcon />
-                      <span className="tooltip">Add an image</span>
+                      <span className="tooltip">
+                        {isEditingMessage ? "Images disabled while editing" : "Add an image"}
+                      </span>
                     </motion.button>
                   </div>
                   <textarea
                     ref={textareaRef}
                     rows={1}
                     value={input}
-                    placeholder="Message AI"
+                    placeholder={isEditingMessage ? "Edit the last user message" : "Message AI"}
                     aria-label="Message AI"
                     enterKeyHint="send"
                     className="composer-message-input"

@@ -44,6 +44,17 @@ export type ChatStreamRequest = {
   generation: GenerationOptions;
 };
 
+export type EditMessageStreamRequest = {
+  input: {
+    parts: TextInputPart[];
+  };
+  generation: GenerationOptions;
+};
+
+export type RegenerateMessageStreamRequest = {
+  generation: GenerationOptions;
+};
+
 export type TextMessagePart = {
   type: "text";
   text: string;
@@ -58,6 +69,13 @@ export type ImageMessagePart = {
 
 export type MessagePart = TextMessagePart | ImageMessagePart;
 
+export type MessageMetrics = {
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  latency_ms: number | null;
+};
+
 export type ChatMessageResponse = {
   id: string;
   conversation_id: string;
@@ -70,6 +88,7 @@ export type ChatMessageResponse = {
   model?: string | null;
   finish_reason?: string | null;
   error?: string | null;
+  metrics?: MessageMetrics | null;
 };
 
 export type ConversationSummary = {
@@ -88,6 +107,10 @@ export type ConversationDetail = ConversationSummary & {
 export type CancelMessageResponse = {
   message: ChatMessageResponse;
   conversation: ConversationSummary;
+};
+
+export type ConversationRenameRequest = {
+  title: string;
 };
 
 export type ChatStreamEvent = {
@@ -310,6 +333,15 @@ export const listConversations = () =>
 export const getConversation = (conversationId: string) =>
   requestJson<ConversationDetail>(`/chat/conversations/${conversationId}`);
 
+export const renameConversation = (
+  conversationId: string,
+  payload: ConversationRenameRequest,
+) =>
+  requestJson<ConversationSummary>(`/chat/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+
 export const deleteConversation = (conversationId: string) =>
   requestJson<void>(
     `/chat/conversations/${conversationId}`,
@@ -347,11 +379,45 @@ export async function* streamChat(
   payload: ChatStreamRequest,
   signal: AbortSignal,
 ): AsyncGenerator<ChatStreamEvent, void, void> {
+  yield* streamNdjson("/chat/stream", payload, signal);
+}
+
+export async function* editConversationMessageStream(
+  conversationId: string,
+  messageId: string,
+  payload: EditMessageStreamRequest,
+  signal: AbortSignal,
+): AsyncGenerator<ChatStreamEvent, void, void> {
+  yield* streamNdjson(
+    `/chat/conversations/${conversationId}/messages/${messageId}/edit-stream`,
+    payload,
+    signal,
+  );
+}
+
+export async function* regenerateConversationMessageStream(
+  conversationId: string,
+  messageId: string,
+  payload: RegenerateMessageStreamRequest,
+  signal: AbortSignal,
+): AsyncGenerator<ChatStreamEvent, void, void> {
+  yield* streamNdjson(
+    `/chat/conversations/${conversationId}/messages/${messageId}/regenerate-stream`,
+    payload,
+    signal,
+  );
+}
+
+async function* streamNdjson(
+  path: string,
+  payload: ChatStreamRequest | EditMessageStreamRequest | RegenerateMessageStreamRequest,
+  signal: AbortSignal,
+): AsyncGenerator<ChatStreamEvent, void, void> {
   const streamSignal = createTimedSignal(signal, STREAM_CONNECT_TIMEOUT_MS);
   let sawFirstEvent = false;
 
   try {
-    const response = await fetch(buildApiUrl("/chat/stream"), {
+    const response = await fetch(buildApiUrl(path), {
       method: "POST",
       headers: {
         Accept: "application/x-ndjson",

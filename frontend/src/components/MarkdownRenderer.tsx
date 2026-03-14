@@ -89,12 +89,15 @@ const stabilizeStreamingMarkdown = (content: string) => {
 
 const VARIANT_STYLES = {
   default: {
-    heading1: "mb-4 text-[1.65rem] font-semibold leading-tight tracking-[-0.03em] text-current",
-    heading2: "mb-4 text-[1.35rem] font-semibold leading-tight tracking-[-0.025em] text-current",
-    heading3: "mb-3 text-[1.1rem] font-semibold leading-tight tracking-[-0.02em] text-current",
-    paragraph: "mb-4 text-[16px] leading-9 tracking-[-0.01em] text-current last:mb-0",
-    list: "mb-4 space-y-2 pl-6 text-[16px] leading-8 text-current",
-    blockquote: "mb-4 border-l border-white/10 pl-4 text-zinc-300",
+    heading1:
+      "mb-5 mt-2 text-[2rem] font-semibold leading-[1.15] tracking-[-0.04em] text-current first:mt-0",
+    heading2:
+      "mb-4 mt-8 text-[1.45rem] font-semibold leading-[1.2] tracking-[-0.03em] text-current first:mt-0",
+    heading3:
+      "mb-3 mt-6 text-[1.1rem] font-semibold leading-[1.28] tracking-[-0.02em] text-current first:mt-0",
+    paragraph: "mb-4 text-[16px] leading-8 tracking-[-0.01em] text-current last:mb-0",
+    list: "mb-5 space-y-2.5 pl-6 text-[16px] leading-8 text-current",
+    blockquote: "mb-5 border-l-2 border-white/10 pl-4 text-zinc-300",
     tableShell: "mb-5 overflow-x-auto rounded-[1rem] border border-white/[0.08]",
     table: "min-w-full border-collapse bg-white/[0.02] text-left text-[14px] text-zinc-100",
     th: "border-b border-white/[0.08] px-4 py-3 text-[11px] uppercase tracking-[0.18em] text-zinc-400",
@@ -113,7 +116,7 @@ const VARIANT_STYLES = {
     blockCode: "font-mono text-[13px] leading-7 text-zinc-100",
   },
   compact: {
-    heading1: "mb-3 text-[1.1rem] font-semibold leading-tight tracking-[-0.025em] text-current",
+    heading1: "mb-3 text-[1.15rem] font-semibold leading-tight tracking-[-0.03em] text-current",
     heading2: "mb-3 text-[1rem] font-semibold leading-tight tracking-[-0.02em] text-current",
     heading3: "mb-2 text-[0.95rem] font-semibold leading-tight tracking-[-0.015em] text-current",
     paragraph: "mb-3 text-[13px] leading-7 tracking-[-0.01em] text-current last:mb-0 sm:text-[14px]",

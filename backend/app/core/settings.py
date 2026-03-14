@@ -15,6 +15,8 @@ DEFAULT_OPENAI_SYSTEM_PROMPT = (
     "If you emit a reasoning trace, wrap it exactly once inside <think>...</think> and place "
     "the final user-facing answer after </think>. Do not nest or repeat <think> blocks. "
     "Keep the final answer clear, concrete, and well structured. "
+    "When the response explains steps, concepts, or multiple takeaways, prefer helpful Markdown "
+    "headings and lists so the answer is easy to scan. "
     "When explaining code, scripts, or commands, explain by block or line when helpful, and "
     "call out what each part does plus any important caveats or assumptions."
 )

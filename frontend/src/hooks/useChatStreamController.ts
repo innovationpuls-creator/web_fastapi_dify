@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cancelConversationMessage, streamChat } from "../services/api";
 import {
+  cancelConversationMessage,
+  editConversationMessageStream,
+  regenerateConversationMessageStream,
+  streamChat,
+} from "../services/api";
+import {
+  DEFAULT_GENERATION,
   UNEXPECTED_STREAM_END_MESSAGE,
   cloneConversation,
   cloneMessage,
@@ -9,10 +15,12 @@ import {
   describeError,
   hasSendableContent,
   isBusyPhase,
+  nowIso,
   isRetryableError,
   toDisplayMessage,
   type AppPhase,
   type DisplayConversation,
+  type DisplayMessage,
   type StreamRuntime,
 } from "../features/chat/model";
 import {
@@ -26,12 +34,38 @@ import {
   type StreamMetaPayload,
 } from "../features/chat/streamLifecycle";
 import { createStreamSession } from "../features/chat/streamSession";
+import { isPureTextUserMessage, resolveLastTurn } from "../features/chat/turnActions";
 import type { ComposerController } from "./useComposerController";
 import type { ConversationController } from "./useConversationController";
 
 type StreamControllerOptions = {
   composer: ComposerController;
   conversation: ConversationController;
+};
+
+const restartAssistantMessageLocally = (message: DisplayMessage): DisplayMessage => {
+  const updatedAt = nowIso();
+  return {
+    ...message,
+    status: "streaming",
+    parts: [],
+    created_at: updatedAt,
+    updated_at: updatedAt,
+    thinking_completed_at: null,
+    finish_reason: null,
+    error: null,
+    metrics: null,
+    isSkeleton: true,
+  };
+};
+
+const rewriteUserMessageLocally = (message: DisplayMessage, text: string): DisplayMessage => {
+  const updatedAt = nowIso();
+  return {
+    ...message,
+    parts: [{ type: "text", text }],
+    updated_at: updatedAt,
+  };
 };
 
 export const useChatStreamController = ({
@@ -150,6 +184,222 @@ export const useChatStreamController = ({
       });
     },
     [conversation, promoteDraftConversation],
+  );
+
+  const runExistingTurnStream = useCallback(
+    async ({
+      conversationId,
+      userMessage,
+      assistantMessage,
+      snapshotText,
+      optimisticUpdater,
+      streamFactory,
+      restoreComposerOnNoMeta,
+    }: {
+      conversationId: string;
+      userMessage: DisplayMessage;
+      assistantMessage: DisplayMessage;
+      snapshotText: string;
+      optimisticUpdater: (messages: DisplayMessage[]) => DisplayMessage[];
+      streamFactory: (
+        signal: AbortSignal,
+      ) => AsyncGenerator<import("../services/api").ChatStreamEvent, void, void>;
+      restoreComposerOnNoMeta?: () => void;
+    }) => {
+      const previousConversation = cloneConversation(
+        conversation.conversationDetailsRef.current[conversationId] ?? null,
+      );
+      if (!previousConversation) {
+        return;
+      }
+
+      const runtime: StreamRuntime = {
+        controller: new AbortController(),
+        originConversationId: conversationId,
+        currentConversationId: conversationId,
+        userClientKey: userMessage.clientKey,
+        assistantClientKey: assistantMessage.clientKey,
+        userMessageId: userMessage.id,
+        assistantMessageId: assistantMessage.id,
+        snapshotText,
+        snapshotUploads: [],
+        previousDraftMessages: [],
+        previousConversation,
+        metaReceived: false,
+        stopRequested: false,
+      };
+
+      conversation.patchConversationMessages(conversationId, optimisticUpdater);
+      composer.clearComposerError();
+      composer.setMotionSource("user");
+      conversation.closeMobileSidebar();
+      conversation.setStickToBottom(true);
+      conversation.setViewportMotionSource("stream");
+      conversation.setHistoryMotionSource("stream");
+      setPhase("streaming");
+      streamRuntimeRef.current = runtime;
+
+      try {
+        for await (const event of streamFactory(runtime.controller.signal)) {
+          if (
+            event.event === "meta" &&
+            event.conversation_id &&
+            event.user_message_id &&
+            event.assistant_message_id
+          ) {
+            patchRuntimeMeta(runtime, {
+              conversationId: event.conversation_id,
+              title: event.title || previousConversation.title,
+              model: event.model,
+              userMessageId: event.user_message_id,
+              assistantMessageId: event.assistant_message_id,
+            });
+            continue;
+          }
+
+          if (event.event === "delta") {
+            conversation.patchConversationMessages(runtime.currentConversationId, (messages) =>
+              applyAssistantDelta(
+                messages,
+                runtime.assistantClientKey,
+                event.delta || "",
+                event.model,
+              ),
+            );
+            continue;
+          }
+
+          if (event.event === "done" && event.message && event.conversation) {
+            const finalAssistant = {
+              ...toDisplayMessage(event.message),
+              clientKey: runtime.assistantClientKey,
+            };
+            const finalConversation = event.conversation;
+
+            conversation.setConversationDetails((current) => {
+              const detail = current[finalConversation.id];
+              if (!detail) {
+                return current;
+              }
+
+              return {
+                ...current,
+                [finalConversation.id]: {
+                  ...detail,
+                  ...finalConversation,
+                  messages: replaceAssistantMessage(
+                    detail.messages,
+                    runtime.assistantClientKey,
+                    finalAssistant,
+                  ),
+                },
+              };
+            });
+            conversation.setHistoryMotionSource("stream");
+            conversation.syncSummary(finalConversation, true);
+            composer.clearComposerError();
+            finalizeStreamState("idle");
+            return;
+          }
+
+          if (event.event === "error") {
+            if (!runtime.metaReceived) {
+              restoreOptimisticSnapshot(runtime);
+              restoreComposerOnNoMeta?.();
+            } else {
+              settleAssistantMessage(runtime, {
+                status: "failed",
+                error: event.error || "Service temporarily unavailable.",
+                model: event.model,
+              });
+              if (runtime.currentConversationId) {
+                void conversation.reconcileConversation(runtime.currentConversationId, true);
+              }
+            }
+
+            composer.setMotionSource("stream");
+            composer.setComposerError({
+              message: event.error || "Service temporarily unavailable.",
+              retryable: false,
+            });
+            finalizeStreamState("error");
+            return;
+          }
+        }
+
+        if (!runtime.metaReceived) {
+          restoreOptimisticSnapshot(runtime);
+          restoreComposerOnNoMeta?.();
+        } else {
+          settleAssistantMessage(runtime, {
+            status: "failed",
+            error: UNEXPECTED_STREAM_END_MESSAGE,
+          });
+          if (runtime.currentConversationId) {
+            await conversation
+              .reconcileConversation(runtime.currentConversationId, true)
+              .catch(() => undefined);
+          }
+        }
+        composer.setMotionSource("stream");
+        composer.setComposerError({
+          message: UNEXPECTED_STREAM_END_MESSAGE,
+          retryable: false,
+        });
+        finalizeStreamState("error");
+      } catch (error) {
+        if (runtime.stopRequested) {
+          if (!runtime.metaReceived) {
+            restoreOptimisticSnapshot(runtime);
+            restoreComposerOnNoMeta?.();
+          } else if (runtime.currentConversationId) {
+            settleAssistantMessage(runtime, {
+              status: "cancelled",
+              finishReason: "cancelled",
+            });
+            await conversation
+              .reconcileConversation(runtime.currentConversationId, true)
+              .catch(() => undefined);
+          }
+          finalizeStreamState("idle");
+          return;
+        }
+
+        const message = describeError(error, "Service temporarily unavailable.");
+
+        if (!runtime.metaReceived) {
+          restoreOptimisticSnapshot(runtime);
+          restoreComposerOnNoMeta?.();
+        } else {
+          settleAssistantMessage(runtime, {
+            status: "failed",
+            error: message,
+          });
+          if (runtime.currentConversationId) {
+            await conversation
+              .reconcileConversation(runtime.currentConversationId, true)
+              .catch(() => undefined);
+          }
+        }
+
+        composer.setMotionSource("stream");
+        composer.setComposerError({
+          message,
+          retryable: false,
+        });
+        finalizeStreamState("error");
+      } finally {
+        composer.focusInput();
+      }
+    },
+    [
+      composer,
+      conversation,
+      finalizeStreamState,
+      patchRuntimeMeta,
+      restoreOptimisticSnapshot,
+      settleAssistantMessage,
+    ],
   );
 
   const handleStop = useCallback(async () => {
@@ -472,6 +722,129 @@ export const useChatStreamController = ({
     settleAssistantMessage,
   ]);
 
+  const sendEditedMessage = useCallback(async (messageId: string) => {
+    if (isBusy || composer.editingMessageId !== messageId) {
+      return;
+    }
+
+    const conversationId = conversation.activeConversationIdRef.current;
+    if (!conversationId) {
+      return;
+    }
+
+    const detail = conversation.conversationDetailsRef.current[conversationId];
+    if (!detail) {
+      return;
+    }
+
+    const snapshotText = composer.input.trim();
+    if (!snapshotText) {
+      return;
+    }
+
+    const { userMessage, assistantMessage } = resolveLastTurn(detail.messages);
+    if (
+      !userMessage ||
+      !assistantMessage ||
+      userMessage.id !== messageId ||
+      !isPureTextUserMessage(userMessage)
+    ) {
+      composer.setMotionSource("user");
+      composer.setComposerError({
+        message: "Only the latest plain-text user message can be edited.",
+        retryable: false,
+      });
+      return;
+    }
+
+    composer.clearEditState();
+    composer.setInput("");
+
+    await runExistingTurnStream({
+      conversationId,
+      userMessage,
+      assistantMessage,
+      snapshotText,
+      optimisticUpdater: (messages) =>
+        messages.map((message) => {
+          if (message.clientKey === userMessage.clientKey) {
+            return rewriteUserMessageLocally(message, snapshotText);
+          }
+
+          if (message.clientKey === assistantMessage.clientKey) {
+            return restartAssistantMessageLocally(message);
+          }
+
+          return message;
+        }),
+      streamFactory: (signal) =>
+        editConversationMessageStream(
+          conversationId,
+          messageId,
+          {
+            input: {
+              parts: [{ type: "text", text: snapshotText }],
+            },
+            generation: DEFAULT_GENERATION,
+          },
+          signal,
+        ),
+      restoreComposerOnNoMeta: () => composer.restoreEditState(messageId, snapshotText),
+    });
+  }, [composer, conversation, isBusy, runExistingTurnStream]);
+
+  const regenerateMessage = useCallback(async (messageId: string) => {
+    if (isBusy) {
+      return;
+    }
+
+    const conversationId = conversation.activeConversationIdRef.current;
+    if (!conversationId) {
+      return;
+    }
+
+    const detail = conversation.conversationDetailsRef.current[conversationId];
+    if (!detail) {
+      return;
+    }
+
+    const { userMessage, assistantMessage } = resolveLastTurn(detail.messages);
+    if (!userMessage || !assistantMessage || assistantMessage.id !== messageId) {
+      composer.setMotionSource("user");
+      composer.setComposerError({
+        message: "Only the latest assistant response can be regenerated.",
+        retryable: false,
+      });
+      return;
+    }
+
+    if (composer.isEditingMessage) {
+      composer.cancelEdit();
+    }
+
+    await runExistingTurnStream({
+      conversationId,
+      userMessage,
+      assistantMessage,
+      snapshotText: "",
+      optimisticUpdater: (messages) =>
+        messages.map((message) =>
+          message.clientKey === assistantMessage.clientKey
+            ? restartAssistantMessageLocally(message)
+            : message,
+        ),
+      streamFactory: (signal) =>
+        regenerateConversationMessageStream(
+          conversationId,
+          messageId,
+          {
+            generation: DEFAULT_GENERATION,
+          },
+          signal,
+        ),
+    });
+  }, [composer, conversation, isBusy, runExistingTurnStream]);
+
   const handleRetry = useCallback(() => {
     if (isBusy || !composer.composerError?.retryable) {
       return;
@@ -488,6 +861,8 @@ export const useChatStreamController = ({
     isBusy,
     isMetaPendingDraft,
     sendPrompt,
+    sendEditedMessage,
+    regenerateMessage,
     handleStop,
     handleRetry,
   };

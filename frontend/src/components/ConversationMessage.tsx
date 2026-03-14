@@ -1,6 +1,7 @@
 import { Suspense, lazy, memo } from "react";
 import { extractAssistantDisplayContent } from "../utils/assistantContent";
 import { getMessageText, type DisplayImagePart, type DisplayMessage } from "../features/chat/model";
+import { formatThoughtSummary } from "./conversationMessageUtils";
 
 const MarkdownRenderer = lazy(() => import("./MarkdownRenderer"));
 const ThinkingBox = lazy(() => import("./ThinkingBox"));
@@ -9,36 +10,20 @@ export type ConversationMessageProps = {
   message: DisplayMessage;
   isStreaming: boolean;
   previousUserText?: string;
+  showEdit?: boolean;
+  showRegenerate?: boolean;
+  onEdit?: () => void;
+  onRegenerate?: () => void;
 };
 
-export const formatThoughtSummary = (
-  createdAt: string,
-  updatedAt: string,
-  thinkingCompletedAt: string | null | undefined,
-  isStreaming: boolean,
-) => {
-  if (isStreaming) {
-    return "Thinking...";
+const formatLatency = (latencyMs: number | null | undefined) => {
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs <= 0) {
+    return null;
   }
 
-  const startedAt = Date.parse(createdAt);
-  const settledAt = Date.parse(thinkingCompletedAt ?? updatedAt);
-  if (!Number.isFinite(startedAt) || !Number.isFinite(settledAt) || settledAt <= startedAt) {
-    return "Thought complete";
-  }
-
-  const elapsedSeconds = Math.max(1, Math.round((settledAt - startedAt) / 1000));
-  if (elapsedSeconds < 60) {
-    return `Thought for ${elapsedSeconds} second${elapsedSeconds === 1 ? "" : "s"}`;
-  }
-
-  const minutes = Math.floor(elapsedSeconds / 60);
-  const seconds = elapsedSeconds % 60;
-  if (seconds === 0) {
-    return `Thought for ${minutes} minute${minutes === 1 ? "" : "s"}`;
-  }
-
-  return `Thought for ${minutes} minute${minutes === 1 ? "" : "s"} ${seconds} second${seconds === 1 ? "" : "s"}`;
+  return latencyMs >= 1000
+    ? `${(latencyMs / 1000).toFixed(latencyMs >= 10_000 ? 0 : 1)}s`
+    : `${Math.round(latencyMs)}ms`;
 };
 
 const renderMessageImages = (
@@ -69,17 +54,36 @@ const ConversationMessageComponent = ({
   message,
   isStreaming,
   previousUserText = "",
+  showEdit = false,
+  showRegenerate = false,
+  onEdit,
+  onRegenerate,
 }: ConversationMessageProps) => {
   const text = getMessageText(message);
   const images = message.parts.filter((part): part is DisplayImagePart => part.type === "image");
+  const assistantLatency = formatLatency(message.metrics?.latency_ms);
 
   if (message.role === "user") {
     const hasText = text.trim().length > 0;
 
     return (
-      <div className="message-user-shell max-w-[85%] whitespace-pre-wrap break-words text-[16px] text-right sm:max-w-[30rem]">
-        {renderMessageImages(images, hasText, message.role)}
-        {hasText ? text : null}
+      <div className="message-user-stack max-w-[88%] sm:max-w-[34rem]">
+        <div className="message-user-shell whitespace-pre-wrap break-words text-[16px] text-right">
+          {renderMessageImages(images, hasText, message.role)}
+          {hasText ? text : null}
+        </div>
+        {showEdit ? (
+          <div className="message-footer-row justify-end">
+            <button
+              type="button"
+              className="message-footer-action"
+              aria-label="Edit message"
+              onClick={onEdit}
+            >
+              Edit
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -100,9 +104,15 @@ const ConversationMessageComponent = ({
   );
 
   return (
-    <div className={assistantDisplay.hasThinking ? "w-full max-w-[44rem]" : "max-w-[85%] sm:max-w-[44rem]"}>
+    <div
+      className={
+        assistantDisplay.hasThinking
+          ? "assistant-message-shell w-full max-w-[46rem]"
+          : "assistant-message-shell max-w-[88%] sm:max-w-[46rem]"
+      }
+    >
       {message.model ? (
-        <div className="mb-3 text-[13px] font-medium tracking-[-0.01em] text-[#dbe7ff]/88">
+        <div className="assistant-model-label mb-3 text-[12px] font-medium tracking-[0.14em] text-[#dbe7ff]/72">
           {message.model}
         </div>
       ) : null}
@@ -151,6 +161,23 @@ const ConversationMessageComponent = ({
       {isTruncated ? (
         <div className="mt-3 inline-flex rounded-full border border-amber-200/10 bg-amber-200/[0.06] px-3 py-1 text-[12px] tracking-[-0.01em] text-amber-100/70">
           Response truncated due to output limit.
+        </div>
+      ) : null}
+
+      {showRegenerate ? (
+        <div className="message-footer-row">
+          {message.metrics?.total_tokens ? <span>Tokens: {message.metrics.total_tokens}</span> : null}
+          {assistantLatency ? <span>Latency: {assistantLatency}</span> : null}
+          {showRegenerate ? (
+            <button
+              type="button"
+              className="message-footer-action"
+              aria-label="Regenerate response"
+              onClick={onRegenerate}
+            >
+              Regenerate
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

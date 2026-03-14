@@ -17,7 +17,11 @@ from backend.app.chat.infrastructure.persistence import (
     ChatRepository,
     UploadRecord,
 )
-from backend.app.chat.schemas import CancelMessageResponse, ConversationDetail, ConversationSummary
+from backend.app.chat.schemas import (
+    CancelMessageResponse,
+    ConversationDetail,
+    ConversationSummary,
+)
 
 
 @dataclass(slots=True)
@@ -38,6 +42,20 @@ class ConversationService:
             return None
         conversation, messages = detail
         return conversation_to_detail(conversation, messages)
+
+    async def rename_conversation(
+        self,
+        conversation_id: str,
+        title: str,
+    ) -> ConversationSummary | None:
+        updated = await self.repository.update_conversation_title(
+            conversation_id,
+            title,
+            utc_now(),
+        )
+        if updated is None:
+            return None
+        return conversation_to_summary(updated)
 
     async def delete_conversation(self, conversation_id: str) -> bool:
         deleted_paths = await self.repository.delete_conversation(conversation_id)

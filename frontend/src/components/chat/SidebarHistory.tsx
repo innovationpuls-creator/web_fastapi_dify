@@ -3,18 +3,16 @@ import { ChevronLeft, Plus } from "lucide-react";
 import {
   MOTION_SPRING,
   MOTION_TRANSITION,
-  getSceneTransition,
   isUserDrivenMotion,
   shouldAnimateLayout,
   type MotionSource,
 } from "../../motion/tokens";
 import type { ConversationSummary } from "../../services/api";
+import ConversationHistoryList from "./ConversationHistoryList";
 
 type SidebarHistoryProps = {
   conversations: ConversationSummary[];
   activeConversationId: string | null;
-  deleteConfirmId: string | null;
-  recentBornConversationId: string | null;
   sidebarCollapsed: boolean;
   isBusy: boolean;
   isDraftSelected: boolean;
@@ -24,14 +22,12 @@ type SidebarHistoryProps = {
   onStartNewChat: () => void;
   onSelectConversation: (conversationId: string) => void;
   onDeleteConversation: (conversationId: string) => void;
-  onCancelDelete: () => void;
+  onRenameConversation: (conversationId: string, title: string) => Promise<void> | void;
 };
 
 const SidebarHistory = ({
   conversations,
   activeConversationId,
-  deleteConfirmId,
-  recentBornConversationId,
   sidebarCollapsed,
   isBusy,
   isDraftSelected,
@@ -41,11 +37,10 @@ const SidebarHistory = ({
   onStartNewChat,
   onSelectConversation,
   onDeleteConversation,
-  onCancelDelete,
+  onRenameConversation,
 }: SidebarHistoryProps) => {
   const reduceMotion = useReducedMotion();
   const panelTransition = reduceMotion ? MOTION_TRANSITION.soft : MOTION_SPRING.panel;
-  const listTransition = getSceneTransition(motionSource, Boolean(reduceMotion));
   const enableLayout = shouldAnimateLayout(motionSource);
   const enableSharedLayout = isUserDrivenMotion(motionSource);
 
@@ -93,79 +88,21 @@ const SidebarHistory = ({
             <span>New chat</span>
           </motion.button>
 
-          <nav aria-label="Conversation history" className="space-y-1 overflow-y-auto pr-1">
-            {conversations.map((conversation) => {
-              const isActive = conversation.id === activeConversationId;
-              const isConfirming = deleteConfirmId === conversation.id;
-
-              return (
-                <motion.div
-                  key={conversation.id}
-                  layout={enableLayout ? "position" : false}
-                  layoutId={
-                    enableSharedLayout && recentBornConversationId === conversation.id
-                      ? "new-chat-anchor"
-                      : undefined
-                  }
-                  className="history-row group flex items-start justify-between gap-3 rounded-[1rem] px-2"
-                  transition={enableLayout ? MOTION_SPRING.list : listTransition}
-                >
-                  <button
-                    type="button"
-                    className={`block min-w-0 flex-1 truncate py-2 text-left text-sm transition ${
-                      isActive ? "text-white" : "text-zinc-500 hover:text-zinc-200"
-                    } disabled:cursor-not-allowed disabled:opacity-40`}
-                    onClick={() => onSelectConversation(conversation.id)}
-                    disabled={isBusy}
-                  >
-                    {conversation.title}
-                  </button>
-
-                  <AnimatePresence initial={false} mode="popLayout">
-                    {isConfirming ? (
-                      <motion.div
-                        key="confirm"
-                        className="flex shrink-0 items-center gap-2 pt-1"
-                        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 8, scale: 0.98 }}
-                        animate={{ opacity: 1, x: 0, scale: 1 }}
-                        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, x: 6, scale: 0.98 }}
-                        transition={MOTION_TRANSITION.soft}
-                      >
-                        <button
-                          type="button"
-                          className="history-item-delete text-white opacity-100"
-                          onClick={() => onDeleteConversation(conversation.id)}
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          className="history-item-delete opacity-100"
-                          onClick={onCancelDelete}
-                        >
-                          Cancel
-                        </button>
-                      </motion.div>
-                    ) : (
-                      <motion.button
-                        key="delete"
-                        type="button"
-                        className="history-item-delete shrink-0 pt-1"
-                        onClick={() => onDeleteConversation(conversation.id)}
-                        disabled={isBusy}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={MOTION_TRANSITION.soft}
-                      >
-                        Delete
-                      </motion.button>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })}
-          </nav>
+          <motion.nav
+            aria-label="Conversation history"
+            className="overflow-y-auto pr-1"
+            layout={enableLayout ? "position" : false}
+          >
+            <ConversationHistoryList
+              conversations={conversations}
+              activeConversationId={activeConversationId}
+              isBusy={isBusy}
+              menuVisibility="hover"
+              onSelectConversation={onSelectConversation}
+              onDeleteConversation={onDeleteConversation}
+              onRenameConversation={onRenameConversation}
+            />
+          </motion.nav>
         </motion.div>
       </aside>
 

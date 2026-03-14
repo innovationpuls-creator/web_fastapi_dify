@@ -16,8 +16,13 @@ from backend.app.chat.application.streaming import (
     build_chat_request_args,
 )
 from backend.app.chat.cancellation import ChatCancellationRegistry
+from backend.app.chat.domain.errors import ChatPreStreamError
 from backend.app.chat.domain.text import utc_now
-from backend.app.chat.infrastructure.persistence import ChatRepository, NewMessagePart
+from backend.app.chat.infrastructure.persistence import (
+    ChatRepository,
+    NewAsset,
+    NewMessagePart,
+)
 from backend.app.chat.schemas import ChatStreamRequest
 
 
@@ -28,8 +33,14 @@ class FakeChunkChoice:
 
 
 class FakeChunk:
-    def __init__(self, delta: str = "", finish_reason: str | None = None) -> None:
+    def __init__(
+        self,
+        delta: str = "",
+        finish_reason: str | None = None,
+        usage: object | None = None,
+    ) -> None:
         self.choices = [FakeChunkChoice(delta=delta, finish_reason=finish_reason)]
+        self.usage = usage
 
 
 class FakeStream:
@@ -140,6 +151,55 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
             message_id=assistant_message.id,
             model="test-model",
             created_at=assistant_message.created_at,
+        )
+        return conversation, SimpleNamespace(user=user_message, assistant=assistant_message)
+
+    async def _seed_completed_turn(
+        self,
+        *,
+        user_text: str = "Original question",
+        assistant_text: str = "Original answer",
+        include_image: bool = False,
+    ) -> tuple[SimpleNamespace, SimpleNamespace]:
+        conversation = await self.repository.create_conversation(
+            title="Completed turn",
+            created_at="2026-03-07T00:00:00+00:00",
+        )
+        user_parts = [NewMessagePart(type="text", text=user_text)]
+        if include_image:
+            user_parts.append(
+                NewMessagePart(
+                    type="image",
+                    asset=NewAsset(
+                        id="asset-1",
+                        media_type="image/webp",
+                        storage_path=str(self.base_path / "assets" / "asset-1.webp"),
+                        byte_size=128,
+                    ),
+                )
+            )
+        user_message = await self.repository.create_message(
+            conversation_id=conversation.id,
+            role="user",
+            status="completed",
+            preview_text=user_text,
+            text_content=user_text,
+            parts=user_parts,
+            created_at="2026-03-07T00:00:01+00:00",
+        )
+        assistant_message = await self.repository.create_message(
+            conversation_id=conversation.id,
+            role="assistant",
+            status="completed",
+            preview_text=assistant_text,
+            text_content=assistant_text,
+            parts=[NewMessagePart(type="text", text=assistant_text)],
+            created_at="2026-03-07T00:00:02+00:00",
+            model="test-model",
+            input_tokens=12,
+            output_tokens=8,
+            total_tokens=20,
+            latency_ms=432.1,
         )
         return conversation, SimpleNamespace(user=user_message, assistant=assistant_message)
 
@@ -372,6 +432,54 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored_message.finish_reason, "length")
         self.assertEqual(stored_message.text_content, "Partial answer")
 
+    async def test_generate_chat_stream_persists_usage_and_latency_metrics(self) -> None:
+        conversation, messages = await self._seed_streaming_assistant()
+        request = FakeRequest()
+        stream_service = self._create_stream_service()
+        prepared = PreparedChatStream(
+            stream=FakeStream(
+                [
+                    (0.0, FakeChunk(delta="Measured answer")),
+                    (
+                        0.0,
+                        FakeChunk(
+                            finish_reason="stop",
+                            usage=SimpleNamespace(
+                                prompt_tokens=120,
+                                completion_tokens=42,
+                                total_tokens=162,
+                            ),
+                        ),
+                    ),
+                ]
+            ),
+            start_time=0.0,
+            message_count=1,
+            model="test-model",
+            conversation=conversation,
+            user_message=messages.user,
+            assistant_message=messages.assistant,
+        )
+
+        events: list[dict[str, object]] = []
+
+        async for payload in stream_service.generate_chat_stream(request, prepared):
+            events.append(json.loads(payload.decode("utf-8")))
+
+        self.assertEqual(events[-1]["event"], "done")
+        self.assertEqual(events[-1]["message"]["metrics"]["input_tokens"], 120)
+        self.assertEqual(events[-1]["message"]["metrics"]["output_tokens"], 42)
+        self.assertEqual(events[-1]["message"]["metrics"]["total_tokens"], 162)
+        self.assertIsNotNone(events[-1]["message"]["metrics"]["latency_ms"])
+
+        stored_message = await self.repository.get_message(messages.assistant.id)
+        self.assertIsNotNone(stored_message)
+        self.assertEqual(stored_message.input_tokens, 120)
+        self.assertEqual(stored_message.output_tokens, 42)
+        self.assertEqual(stored_message.total_tokens, 162)
+        self.assertIsNotNone(stored_message.latency_ms)
+        self.assertGreater(stored_message.latency_ms, 0)
+
     async def test_generate_chat_stream_persists_thinking_completion_time(self) -> None:
         conversation, messages = await self._seed_streaming_assistant()
         request = FakeRequest()
@@ -563,3 +671,157 @@ class ChatServiceTests(unittest.IsolatedAsyncioTestCase):
             self.settings.openai_system_prompt,
         )
         self.assertEqual(request_args["messages"][1]["content"], "hello")
+
+    async def test_prepare_edit_stream_rewrites_last_text_turn(self) -> None:
+        conversation, messages = await self._seed_completed_turn()
+        stream = FakeStream(
+            [
+                (0.0, FakeChunk(delta="Edited answer")),
+                (0.0, FakeChunk(finish_reason="stop")),
+            ]
+        )
+        stream_service = self._create_stream_service(stream)
+        payload = ChatStreamRequest.model_validate(
+            {
+                "input": {"parts": [{"type": "text", "text": "Edited question"}]},
+            }
+        )
+
+        prepared = await stream_service.prepare_edit_stream(
+            FakeRequest(
+                path=(
+                    f"/chat/conversations/{conversation.id}/messages/"
+                    f"{messages.user.id}/edit-stream"
+                )
+            ),
+            conversation.id,
+            messages.user.id,
+            payload,
+        )
+
+        rewritten_user = await self.repository.get_message(messages.user.id)
+        rewritten_assistant = await self.repository.get_message(messages.assistant.id)
+
+        self.assertIsNotNone(rewritten_user)
+        self.assertIsNotNone(rewritten_assistant)
+        self.assertEqual(rewritten_user.text_content, "Edited question")
+        self.assertEqual(rewritten_assistant.status, "streaming")
+        self.assertEqual(rewritten_assistant.text_content, "")
+        self.assertIsNone(rewritten_assistant.total_tokens)
+        self.assertNotEqual(rewritten_assistant.created_at, messages.assistant.created_at)
+        self.assertEqual(prepared.assistant_message.id, messages.assistant.id)
+
+        events: list[dict[str, object]] = []
+        async for payload_bytes in stream_service.generate_chat_stream(FakeRequest(), prepared):
+            events.append(json.loads(payload_bytes.decode("utf-8")))
+
+        self.assertEqual(events[-1]["message"]["parts"][0]["text"], "Edited answer")
+
+    async def test_prepare_edit_stream_rejects_last_turn_with_image(self) -> None:
+        conversation, messages = await self._seed_completed_turn(include_image=True)
+        stream_service = self._create_stream_service()
+        payload = ChatStreamRequest.model_validate(
+            {
+                "input": {"parts": [{"type": "text", "text": "Edited question"}]},
+            }
+        )
+
+        with self.assertRaises(ChatPreStreamError) as context:
+            await stream_service.prepare_edit_stream(
+                FakeRequest(
+                    path=(
+                        f"/chat/conversations/{conversation.id}/messages/"
+                        f"{messages.user.id}/edit-stream"
+                    )
+                ),
+                conversation.id,
+                messages.user.id,
+                payload,
+            )
+
+        self.assertEqual(context.exception.status_code, 409)
+
+    async def test_prepare_regenerate_stream_reuses_last_turn_input(self) -> None:
+        conversation, messages = await self._seed_completed_turn()
+        stream = FakeStream(
+            [
+                (0.0, FakeChunk(delta="Regenerated answer")),
+                (
+                    0.0,
+                    FakeChunk(
+                        finish_reason="stop",
+                        usage={
+                            "prompt_tokens": 15,
+                            "completion_tokens": 6,
+                            "total_tokens": 21,
+                        },
+                    ),
+                ),
+            ]
+        )
+        stream_service = self._create_stream_service(stream)
+        generation = ChatStreamRequest.model_validate(
+            {"input": {"parts": [{"type": "text", "text": "ignored"}]}}
+        ).generation
+
+        prepared = await stream_service.prepare_regenerate_stream(
+            FakeRequest(
+                path=(
+                    f"/chat/conversations/{conversation.id}/messages/"
+                    f"{messages.assistant.id}/regenerate-stream"
+                )
+            ),
+            conversation.id,
+            messages.assistant.id,
+            generation,
+        )
+
+        self.assertIsNotNone(stream_service.openai_gateway.last_request_args)
+        upstream_messages = stream_service.openai_gateway.last_request_args["messages"]
+        self.assertEqual(upstream_messages[1]["content"], "Original question")
+        self.assertEqual(prepared.user_message.id, messages.user.id)
+        self.assertEqual(prepared.assistant_message.id, messages.assistant.id)
+        self.assertNotEqual(prepared.assistant_message.created_at, messages.assistant.created_at)
+
+    async def test_prepare_regenerate_stream_rejects_non_last_assistant(self) -> None:
+        conversation, messages = await self._seed_completed_turn()
+        await self.repository.create_message(
+            conversation_id=conversation.id,
+            message_id="user-newer",
+            role="user",
+            status="completed",
+            preview_text="Newer question",
+            text_content="Newer question",
+            parts=[NewMessagePart(type="text", text="Newer question")],
+            created_at="2026-03-07T00:00:03+00:00",
+        )
+        await self.repository.create_message(
+            conversation_id=conversation.id,
+            message_id="assistant-newer",
+            role="assistant",
+            status="completed",
+            preview_text="Newer answer",
+            text_content="Newer answer",
+            parts=[NewMessagePart(type="text", text="Newer answer")],
+            created_at="2026-03-07T00:00:04+00:00",
+            model="test-model",
+        )
+        stream_service = self._create_stream_service()
+        generation = ChatStreamRequest.model_validate(
+            {"input": {"parts": [{"type": "text", "text": "ignored"}]}}
+        ).generation
+
+        with self.assertRaises(ChatPreStreamError) as context:
+            await stream_service.prepare_regenerate_stream(
+                FakeRequest(
+                    path=(
+                        f"/chat/conversations/{conversation.id}/messages/"
+                        f"{messages.assistant.id}/regenerate-stream"
+                    )
+                ),
+                conversation.id,
+                messages.assistant.id,
+                generation,
+            )
+
+        self.assertEqual(context.exception.status_code, 409)
